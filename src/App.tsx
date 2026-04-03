@@ -338,87 +338,99 @@ export default function App() {
                 </div>
               </section>
 
-              {/* Top Articles & Alerts */}
-              <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                  <h3 className="text-slate-500 text-xs font-bold uppercase mb-4 tracking-widest flex items-center gap-2">
-                    <TrendingUp size={14} className="text-green-500" /> Top Articles (28j)
-                  </h3>
-                  <div className="space-y-4">
-                    {(analysis?.topArticles || [
-                      { title: "Coques iPhone 16 Aesthetic", revenue: 45.2, rpmFrance: 4.5, rpmPremium: 12.8, signal: "🌍" },
-                      { title: "Wallpapers iOS 18", revenue: 22.1, rpmFrance: 3.2, rpmPremium: 8.5, signal: "💰" }
-                    ]).map((art, i) => (
-                      <div key={i} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
-                        <div className="flex-1 min-w-0 pr-4">
-                          <p className="text-sm font-bold truncate">{art.title}</p>
-                          <p className="text-xs text-slate-500">RPM FR: €{art.rpmFrance} | RPM Prem: €{art.rpmPremium}</p>
+              {/* Top Articles & Alerts - Only show if analysis exists */}
+              {analysis ? (
+                <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <h3 className="text-slate-500 text-xs font-bold uppercase mb-4 tracking-widest flex items-center gap-2">
+                      <TrendingUp size={14} className="text-green-500" /> Top Articles (28j)
+                    </h3>
+                    <div className="space-y-4">
+                      {analysis.topArticles.map((art, i) => (
+                        <div key={i} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
+                          <div className="flex-1 min-w-0 pr-4">
+                            <p className="text-sm font-bold truncate">{art.title}</p>
+                            <p className="text-xs text-slate-500">RPM FR: €{art.rpmFrance} | RPM Prem: €{art.rpmPremium}</p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm font-bold text-green-600">€{art.revenue}</span>
+                            <span className="text-lg">{art.signal}</span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-sm font-bold text-green-600">€{art.revenue}</span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <h3 className="text-slate-500 text-xs font-bold uppercase mb-4 tracking-widest flex items-center gap-2">
+                      <AlertCircle size={14} className="text-pink-500" /> Alertes Analytics
+                    </h3>
+                    <div className="space-y-4">
+                      {analysis.alerts.map((art, i) => (
+                        <div key={i} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
+                          <div className="flex-1 min-w-0 pr-4">
+                            <p className="text-sm font-bold truncate">{art.title}</p>
+                            <p className="text-xs text-slate-500">{art.views} vues | {art.engagement}s engagement</p>
+                          </div>
                           <span className="text-lg">{art.signal}</span>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
+                </section>
+              ) : (
+                <div className="bg-blue-50 border border-blue-100 p-6 rounded-2xl text-center">
+                  <p className="text-blue-700 font-medium">Analyse tes fichiers CSV pour voir tes revenus et tes alertes réelles ici.</p>
                 </div>
-
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                  <h3 className="text-slate-500 text-xs font-bold uppercase mb-4 tracking-widest flex items-center gap-2">
-                    <AlertCircle size={14} className="text-pink-500" /> Alertes Analytics
-                  </h3>
-                  <div className="space-y-4">
-                    {(analysis?.alerts || [
-                      { title: "Tuto Widgetsmith", views: 1200, engagement: 15, signal: "⏱️" },
-                      { title: "Apps Aesthetic", views: 800, engagement: 55, signal: "⚡" }
-                    ]).map((art, i) => (
-                      <div key={i} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
-                        <div className="flex-1 min-w-0 pr-4">
-                          <p className="text-sm font-bold truncate">{art.title}</p>
-                          <p className="text-xs text-slate-500">{art.views} vues | {art.engagement}s engagement</p>
-                        </div>
-                        <span className="text-lg">{art.signal}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </section>
+              )}
 
               {/* Priorities */}
               <section>
-                <h2 className="text-2xl font-bold mb-6 tracking-tight flex items-center gap-2">🎯 Priorités du jour</h2>
+                <h2 className="text-2xl font-bold mb-6 tracking-tight flex items-center gap-2">🎯 {analysis ? 'Priorités du jour' : 'Suggestions types (Piliers)'}</h2>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {(analysis?.priorities || [
-                    { pillar: '1', title: "30 idées d'écran d'accueil iPhone aesthetic printemps 2026", angle: "Couleurs pastel, widgets floraux et icônes minimalistes.", why: "Fort volume Pinterest détecté sur les trends 'Spring Home Screen'.", amazon: "Packs d'icônes, supports iPhone aesthetic.", pinSearch: "Spring iPhone Home Screen Aesthetic" },
-                    { pillar: '2', title: "Les 15 plus belles coques iPhone 16 tendance 2026", angle: "Sélection premium de coques MagSafe et crossbody. Focus sur le design 'Aesthetic' et la protection.", why: "Niche à fort CPC et intention d'achat élevée.", amazon: "Coques Elago, Spigen, et marques indépendantes.", pinSearch: "iPhone 16 Case Aesthetic Trend" },
-                    { pillar: '5', title: "Guide cadeaux iPhone 2026 : 20 accessoires tech indispensables", angle: "Sélection shopping pour fan d'Apple avec un budget varié.", why: "Pilier Amazon Associates à fort potentiel de conversion.", amazon: "Chargeurs MagSafe, supports, cases AirPods.", pinSearch: "iPhone Gift Guide 2026" }
+                    { pillar: '1', title: "30 idées d'écran d'accueil iPhone aesthetic printemps", angle: "Couleurs pastel et widgets floraux.", why: "Tendance saisonnière forte.", amazon: "", pinSearch: "Spring iPhone Home Screen Aesthetic" },
+                    { pillar: '2', title: "Les plus belles coques iPhone 16 tendance", angle: "Sélection premium MagSafe.", why: "Niche Amazon Associates prioritaire.", amazon: "Coques aesthetic", pinSearch: "iPhone 16 Case Aesthetic Trend" }
                   ]).map((p, i) => (
                     <div key={i} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-200 flex flex-col">
                       <div className="p-6 flex-1">
-                        <div className="flex items-center gap-2 mb-4">
+                        <div className="flex items-center justify-between mb-4">
                           <span className="px-3 py-1 bg-pink-100 text-pink-700 rounded-full text-xs font-bold">Pilier {p.pillar}</span>
-                          {p.amazon && <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold flex items-center gap-1"><ShoppingBag size={10} /> Amazon</span>}
+                          <div className="flex items-center gap-2 text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
+                            <Search size={12} /> {p.pinSearch}
+                          </div>
                         </div>
                         <h3 className="text-xl font-bold mb-3">{p.title}</h3>
                         <p className="text-slate-600 text-sm mb-4">{p.angle}</p>
+                        
+                        <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 mb-4">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase mb-2 tracking-widest">Étape 1 : Copie ce mot-clé sur Pinterest</p>
+                          <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-200">
+                            <code className="text-pink-600 font-bold">{p.pinSearch}</code>
+                            <button onClick={() => copyToClipboard(p.pinSearch)} className="text-slate-400 hover:text-pink-500 transition-colors"><Copy size={16} /></button>
+                          </div>
+                        </div>
+
                         <div className="space-y-3">
                           <div className="flex items-start gap-2 text-sm"><Zap size={16} className="text-pink-500 mt-0.5 shrink-0" /><p><span className="font-bold">Pourquoi :</span> {p.why}</p></div>
                           {p.amazon && <div className="flex items-start gap-2 text-sm"><ShoppingBag size={16} className="text-blue-500 mt-0.5 shrink-0" /><p><span className="font-bold">Amazon :</span> {p.amazon}</p></div>}
                         </div>
                       </div>
                       <div className="bg-slate-50 p-4 border-t border-slate-100 flex items-center justify-between">
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center gap-2 text-xs font-medium text-slate-500"><Search size={14} /> {p.pinSearch}</div>
-                          <button 
-                            onClick={() => pinMetricsInputRef.current?.click()}
-                            className={`text-[10px] font-bold flex items-center gap-1 transition-colors ${pinMetricsData ? 'text-green-600' : 'text-pink-500 hover:text-pink-700'}`}
-                          >
-                            <ImageIcon size={12} /> {pinMetricsData ? 'JSON PinMetrics chargé ✓' : '📎 PinMetrics JSON requis'}
-                          </button>
-                          <input type="file" ref={pinMetricsInputRef} className="hidden" accept=".json" onChange={(e) => handleFileChange('pinMetrics', e.target.files?.[0])} />
-                        </div>
-                        <button onClick={() => startWriting(p)} className="bg-slate-900 text-white px-6 py-2 rounded-lg font-bold hover:bg-slate-800 transition-all flex items-center gap-2">
-                          <Sparkles size={16} /> Rédiger
+                        <button 
+                          onClick={() => pinMetricsInputRef.current?.click()}
+                          className={`flex-1 mr-4 py-3 rounded-xl border-2 border-dashed font-bold text-sm transition-all flex items-center justify-center gap-2 ${pinMetricsData ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-slate-200 text-slate-500 hover:border-pink-300 hover:text-pink-600'}`}
+                        >
+                          {pinMetricsData ? <CheckCircle2 size={18} /> : <Upload size={18} />}
+                          {pinMetricsData ? 'JSON PinMetrics chargé ✓' : 'Étape 2 : Glisse le JSON PinMetrics ici'}
+                        </button>
+                        <input type="file" ref={pinMetricsInputRef} className="hidden" accept=".json" onChange={(e) => handleFileChange('pinMetrics', e.target.files?.[0])} />
+                        
+                        <button 
+                          onClick={() => startWriting(p)} 
+                          className={`px-6 py-3 rounded-xl font-bold transition-all flex items-center gap-2 shadow-lg ${pinMetricsData ? 'bg-slate-900 text-white hover:bg-slate-800' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
+                        >
+                          <Sparkles size={18} /> Rédiger
                         </button>
                       </div>
                     </div>
@@ -426,42 +438,38 @@ export default function App() {
                 </div>
               </section>
 
-              {/* Bonus & Recyclage */}
-              <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                  <h3 className="text-slate-500 text-xs font-bold uppercase mb-4 tracking-widest flex items-center gap-2">
-                    <Sparkles size={14} className="text-pink-500" /> Suggestions Bonus
-                  </h3>
-                  <div className="space-y-4">
-                    {(analysis?.bonus || [
-                      { title: "Tendance Printemps", content: "Les fonds d'écran 'Liquid Glass' sont en train d'exploser sur Pinterest US." },
-                      { title: "Opportunité Pilier 6", content: "Les presets 'Vintage Film' ont un RPM 30% supérieur ce mois-ci." }
-                    ]).map((b, i) => (
-                      <div key={i} className="p-4 bg-slate-50 rounded-xl">
-                        <p className="font-bold text-sm mb-1">{b.title}</p>
-                        <p className="text-xs text-slate-600">{b.content}</p>
-                      </div>
-                    ))}
+              {/* Bonus & Recyclage - Only show if analysis exists */}
+              {analysis && (
+                <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <h3 className="text-slate-500 text-xs font-bold uppercase mb-4 tracking-widest flex items-center gap-2">
+                      <Sparkles size={14} className="text-pink-500" /> Suggestions Bonus
+                    </h3>
+                    <div className="space-y-4">
+                      {analysis.bonus.map((b, i) => (
+                        <div key={i} className="p-4 bg-slate-50 rounded-xl">
+                          <p className="font-bold text-sm mb-1">{b.title}</p>
+                          <p className="text-xs text-slate-600">{b.content}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
 
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                  <h3 className="text-slate-500 text-xs font-bold uppercase mb-4 tracking-widest flex items-center gap-2">
-                    <Repeat size={14} className="text-blue-500" /> Recyclage en.astucieusement.com
-                  </h3>
-                  <div className="space-y-4">
-                    {(analysis?.recyclage || [
-                      { original: "Coques iPhone 16", englishAngle: "The 10 Best Aesthetic iPhone 16 Cases for 2026" },
-                      { original: "Home Screen Printemps", englishAngle: "Spring iPhone Aesthetic: 30+ Home Screen Ideas" }
-                    ]).map((r, i) => (
-                      <div key={i} className="p-4 bg-blue-50 rounded-xl border border-blue-100">
-                        <p className="text-xs text-blue-500 font-bold mb-1">Original: {r.original}</p>
-                        <p className="text-sm font-bold text-slate-800">Angle EN: {r.englishAngle}</p>
-                      </div>
-                    ))}
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <h3 className="text-slate-500 text-xs font-bold uppercase mb-4 tracking-widest flex items-center gap-2">
+                      <Repeat size={14} className="text-blue-500" /> Recyclage en.astucieusement.com
+                    </h3>
+                    <div className="space-y-4">
+                      {analysis.recyclage?.map((r, i) => (
+                        <div key={i} className="p-4 bg-blue-50 rounded-xl border border-blue-100">
+                          <p className="text-xs text-blue-500 font-bold mb-1">Original: {r.original}</p>
+                          <p className="text-sm font-bold text-slate-800">Angle EN: {r.englishAngle}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              </section>
+                </section>
+              )}
             </motion.div>
           )}
 
