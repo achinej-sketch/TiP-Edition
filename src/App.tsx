@@ -125,7 +125,7 @@ export default function App() {
   const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
   const [generatedArticle, setGeneratedArticle] = useState<string>('');
   const [isWriting, setIsWriting] = useState(false);
-  const [step, setStep] = useState<'dashboard' | 'analysis' | 'writing' | 'article'>('dashboard');
+  const [step, setStep] = useState<'dashboard' | 'analysis' | 'writing' | 'article' | 'guide'>('dashboard');
 
   // --- Auth Logic ---
   const checkAuthStatus = async () => {
@@ -134,6 +134,7 @@ export default function App() {
       const res = await fetch('/api/auth-status');
       const data = await res.json();
       setIsProtected(data.isProtected);
+      console.log("Auth Status:", data);
     } catch (error) {
       console.error("Auth check failed", error);
     } finally {
@@ -284,14 +285,25 @@ export default function App() {
       dynamicTyping: true,
       skipEmptyLines: true,
       complete: (results) => {
-        const mapped = results.data.map((row: any) => ({
-          query: row['Query'] || row['Requête'] || row['keyword'],
-          clicks: row['Clicks'] || row['Clics'] || 0,
-          impressions: row['Impressions'] || 0,
-          ctr: row['CTR'] || '0%',
-          position: row['Position'] || 0
-        })).filter(i => (i as any).query);
-        setSeoData(mapped as DataRow[]);
+        console.log("SEO Raw Data:", results.data[0]);
+        const mapped = results.data.map((row: any) => {
+          // Flexible column detection
+          const query = row['Query'] || row['Requête'] || row['keyword'] || row['Mots-clés'] || row['Top queries'];
+          const clicks = row['Clicks'] || row['Clics'] || 0;
+          return {
+            query,
+            clicks: typeof clicks === 'string' ? parseInt(clicks.replace(/\s/g, '')) : clicks,
+            impressions: row['Impressions'] || 0,
+            ctr: row['CTR'] || '0%',
+            position: row['Position'] || 0
+          };
+        }).filter(i => i.query);
+        
+        if (mapped.length === 0) {
+          alert("Format SEO non reconnu. Vérifiez que votre CSV contient une colonne 'Query' ou 'Requête'.");
+        } else {
+          setSeoData(mapped as DataRow[]);
+        }
       }
     });
   };
@@ -304,14 +316,24 @@ export default function App() {
       dynamicTyping: true,
       skipEmptyLines: true,
       complete: (results) => {
-        const mapped = results.data.map((row: any) => ({
-          page: row['Page'] || row['URL'],
-          revenue: row['Estimated earnings'] || row['Revenue'] || row['Revenus'],
-          adRequests: row['Ad requests'] || row['Requêtes d\'annonce'],
-          rpm: row['Ad request RPM'] || row['RPM des requêtes d\'annonce'],
-          clicks: row['Clicks'] || row['Clics']
-        })).filter(i => (i as any).page);
-        setAdsenseData(mapped as DataRow[]);
+        console.log("AdSense Raw Data:", results.data[0]);
+        const mapped = results.data.map((row: any) => {
+          const page = row['Page'] || row['URL'] || row['Nom de la page'];
+          const revenue = row['Estimated earnings'] || row['Revenue'] || row['Revenus'] || row['Gains estimés'];
+          return {
+            page,
+            revenue: typeof revenue === 'string' ? parseFloat(revenue.replace(/[^\d.,]/g, '').replace(',', '.')) : revenue,
+            adRequests: row['Ad requests'] || row['Requêtes d\'annonce'],
+            rpm: row['Ad request RPM'] || row['RPM des requêtes d\'annonce'],
+            clicks: row['Clicks'] || row['Clics']
+          };
+        }).filter(i => i.page);
+
+        if (mapped.length === 0) {
+          alert("Format AdSense non reconnu. Vérifiez que votre CSV contient une colonne 'Page' ou 'URL'.");
+        } else {
+          setAdsenseData(mapped as DataRow[]);
+        }
       }
     });
   };
@@ -409,9 +431,27 @@ export default function App() {
 
           <div className="flex items-center gap-4">
             <div className="hidden md:flex items-center gap-6 mr-6">
-              <button className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">Dashboard</button>
-              <button className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">Analyses</button>
-              <button className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">Articles</button>
+              <button 
+                onClick={() => setStep('dashboard')}
+                className={`text-sm font-semibold transition-colors ${step === 'dashboard' ? 'text-indigo-600' : 'text-slate-600 hover:text-indigo-600'}`}
+              >
+                Dashboard
+              </button>
+              <button 
+                onClick={() => setStep('guide')}
+                className={`text-sm font-semibold transition-colors ${step === 'guide' ? 'text-indigo-600' : 'text-slate-600 hover:text-indigo-600'}`}
+              >
+                Guide Expert
+              </button>
+              <button 
+                onClick={() => {
+                  if (opportunities.length > 0) setStep('dashboard');
+                  else alert("Aucune analyse en cours.");
+                }}
+                className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors"
+              >
+                Analyses
+              </button>
             </div>
             <button 
               onClick={() => setShowConfig(true)}
@@ -611,6 +651,69 @@ export default function App() {
                   </div>
                 </div>
               )}
+            </motion.div>
+          )}
+
+          {step === 'guide' && (
+            <motion.div 
+              key="guide"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="max-w-4xl mx-auto space-y-12 py-10"
+            >
+              <div className="text-center space-y-4">
+                <h2 className="text-4xl font-extrabold tracking-tight">Pourquoi utiliser cette application ?</h2>
+                <p className="text-slate-500 text-lg">La différence entre un rédacteur et un stratège de revenus.</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="modern-card p-8">
+                  <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mb-6">
+                    <Database size={24} />
+                  </div>
+                  <h3 className="text-xl font-bold mb-4">Traitement de Données Réelles</h3>
+                  <p className="text-slate-500 leading-relaxed">
+                    Contrairement à un chat IA, cette app analyse l'intégralité de vos exports CSV. Elle ne devine pas, elle calcule sur la base de votre trafic réel.
+                  </p>
+                </div>
+
+                <div className="modern-card p-8">
+                  <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mb-6">
+                    <TrendingUp size={24} />
+                  </div>
+                  <h3 className="text-xl font-bold mb-4">Analyse de Rentabilité</h3>
+                  <p className="text-slate-500 leading-relaxed">
+                    Elle croise vos revenus AdSense avec vos positions Google. Elle identifie les pages qui "dorment" mais qui pourraient rapporter gros avec 10% de trafic en plus.
+                  </p>
+                </div>
+
+                <div className="modern-card p-8">
+                  <div className="w-12 h-12 bg-violet-50 text-violet-600 rounded-2xl flex items-center justify-center mb-6">
+                    <Globe size={24} />
+                  </div>
+                  <h3 className="text-xl font-bold mb-4">Connaissance du Sitemap</h3>
+                  <p className="text-slate-500 leading-relaxed">
+                    En lisant votre sitemap, l'IA évite de vous proposer des articles que vous avez déjà écrits. Elle cherche les "trous" dans votre stratégie de contenu.
+                  </p>
+                </div>
+
+                <div className="modern-card p-8">
+                  <div className="w-12 h-12 bg-pink-50 text-pink-600 rounded-2xl flex items-center justify-center mb-6">
+                    <FileText size={24} />
+                  </div>
+                  <h3 className="text-xl font-bold mb-4">Prêt pour WordPress</h3>
+                  <p className="text-slate-500 leading-relaxed">
+                    L'article généré respecte les critères RankMath. Copiez le code HTML, collez-le dans l'éditeur Gutenberg, et vous avez un score SEO proche de 100.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex justify-center">
+                <button onClick={() => setStep('dashboard')} className="btn-primary px-10">
+                  Retourner au Dashboard
+                </button>
+              </div>
             </motion.div>
           )}
 
