@@ -206,7 +206,14 @@ export default function App() {
       setTimeout(() => setStep('article'), 500);
     } catch (error: any) {
       console.error("Writing failed:", error);
-      alert(`La rédaction a échoué : ${error.message || "Erreur inconnue"}. Vérifie ta clé API ou réessaie.`);
+      let message = error.message || "Erreur inconnue";
+      
+      // Gestion spécifique de l'erreur de quota 429
+      if (message.includes("RESOURCE_EXHAUSTED") || message.includes("429")) {
+        message = "Quota dépassé (Erreur 429). Ton compte gratuit est limité. Attends 1 minute avant de relancer ou passe à un plan payant sur Google AI Studio.";
+      }
+      
+      alert(`La rédaction a échoué : ${message}`);
       setStep('dashboard');
     }
   };
