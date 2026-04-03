@@ -613,11 +613,10 @@ export default function App() {
                   <div className="flex justify-between items-start mb-2">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Statut Sécurité</p>
                     <button 
-                      onClick={checkAuthStatus}
+                      onClick={() => checkAuthStatus()}
                       className="text-[10px] text-pink-500 font-bold hover:underline flex items-center gap-1"
-                      disabled={isChecking}
                     >
-                      {isChecking ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
+                      <RefreshCw size={10} className={isChecking ? "animate-spin" : ""} />
                       Actualiser
                     </button>
                   </div>
