@@ -1,8 +1,3 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   BarChart3, 
@@ -15,8 +10,6 @@ import {
   ArrowRight,
   Upload,
   ExternalLink,
-  ShoppingBag,
-  Image as ImageIcon,
   Search,
   Plus,
   Settings,
@@ -29,221 +22,101 @@ import {
   RefreshCw,
   Globe,
   Zap,
-  Repeat
+  Shield,
+  Lock,
+  Eye,
+  EyeOff,
+  Database,
+  Cpu,
+  Layers,
+  Terminal,
+  Maximize2,
+  Minimize2,
+  Download,
+  Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Papa from 'papaparse';
 import { GoogleGenAI } from "@google/genai";
-import { ANALYSIS_PROMPT, WRITING_PROMPT } from './constants';
 
-// Types
+// --- Constants & Prompts ---
+const ANALYSIS_PROMPT = `Tu es un expert SEO et analyste de données. Analyse ce fichier CSV de statistiques Search Console.
+Identifie les 5 opportunités prioritaires pour un site de tutoriels iPhone.
+Pour chaque opportunité, fournis :
+1. Un titre accrocheur.
+2. La raison (basée sur les clics, impressions, CTR ou position).
+3. Une stratégie de contenu (ce qu'il faut écrire).
+4. Le mot-clé principal à cibler.
+
+Réponds UNIQUEMENT au format JSON :
+[
+  { "title": "...", "reason": "...", "strategy": "...", "keyword": "...", "priority": "High/Medium" }
+]`;
+
+const WRITING_PROMPT = (title: string, keyword: string) => `Tu es un rédacteur SEO expert pour tutoriel-iphone.fr.
+Rédige un article ultra-complet et optimisé pour le mot-clé : "${keyword}".
+Le titre de l'article est : "${title}".
+
+Instructions strictes :
+1. Utilise un ton professionnel, expert mais accessible.
+2. Structure : Introduction captivante, Sommaire, H2, H3, Conclusion.
+3. Optimisation RankMath : Inclure le mot-clé dans le premier paragraphe, les titres, et naturellement dans le texte.
+4. Format : HTML pur (sans balises <html> ou <body>), prêt à être collé dans WordPress.
+5. Ajoute des conseils d'expert exclusifs.
+6. Longueur : Minimum 1200 mots.
+
+Réponds UNIQUEMENT avec le code HTML.`;
+
+// --- Types ---
 interface ArticleStat {
-  title: string;
-  views: number;
-  engagement: number;
-  revenue?: number;
-  rpmFrance?: number;
-  rpmPremium?: number;
-  country?: string;
-  signal?: string;
+  query: string;
+  clicks: number;
+  impressions: number;
+  ctr: string;
+  position: number;
 }
 
-interface AnalysisResult {
-  status: {
-    lastArticle: string;
-    pillar: string;
-    daysAgo: string;
-    status: 'ok' | 'retard';
-  };
-  alerts: ArticleStat[];
-  topArticles: ArticleStat[];
-  priorities: {
-    pillar: string;
-    title: string;
-    angle: string;
-    why: string;
-    amazon: string;
-    pinSearch: string;
-  }[];
-  bonus: {
-    title: string;
-    content: string;
-  }[];
-  recyclage?: {
-    original: string;
-    englishAngle: string;
-  }[];
+interface Opportunity {
+  title: string;
+  reason: string;
+  strategy: string;
+  keyword: string;
+  priority: 'High' | 'Medium';
 }
 
 export default function App() {
-  const [step, setStep] = useState<'welcome' | 'export_reminder' | 'dashboard' | 'writing' | 'article'>('welcome');
+  // --- State ---
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!sessionStorage.getItem('app_authenticated'));
   const [isProtected, setIsProtected] = useState<boolean>(false);
   const [isChecking, setIsChecking] = useState<boolean>(false);
   const [passwordInput, setPasswordInput] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+
   const [apiKey, setApiKey] = useState<string>(localStorage.getItem('gemini_api_key') || '');
   const [showConfig, setShowConfig] = useState(false);
-  const [files, setFiles] = useState<{ analytics?: File, adsense?: File, pinMetrics?: File }>({});
-  const [pinMetricsData, setPinMetricsData] = useState<any[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
-  const [selectedPriority, setSelectedPriority] = useState<any>(null);
+  
+  const [csvData, setCsvData] = useState<ArticleStat[]>([]);
+  const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
   const [generatedArticle, setGeneratedArticle] = useState<string>('');
-  const [writingProgress, setWritingProgress] = useState(0);
+  const [isWriting, setIsWriting] = useState(false);
+  const [step, setStep] = useState<'auth' | 'dashboard' | 'analysis' | 'writing' | 'article'>('dashboard');
 
-  const analyticsInputRef = useRef<HTMLInputElement>(null);
-  const adsenseInputRef = useRef<HTMLInputElement>(null);
-  const pinMetricsInputRef = useRef<HTMLInputElement>(null);
-
-  const saveApiKey = (key: string) => {
-    setApiKey(key);
-    localStorage.setItem('gemini_api_key', key);
-    setShowConfig(false);
-  };
-
-  const handleFileChange = async (type: 'analytics' | 'adsense' | 'pinMetrics', file: File | undefined) => {
-    if (file) {
-      setFiles(prev => ({ ...prev, [type]: file }));
-      if (type === 'pinMetrics') {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          try {
-            const json = JSON.parse(e.target?.result as string);
-            setPinMetricsData(Array.isArray(json) ? json : [json]);
-          } catch (err) {
-            alert("Erreur lors de la lecture du JSON PinMetrics.");
-          }
-        };
-        reader.readAsText(file);
-      }
-    }
-  };
-
-  const parseCSV = (file: File): Promise<any[]> => {
-    return new Promise((resolve) => {
-      Papa.parse(file, {
-        header: true,
-        skipEmptyLines: true,
-        complete: (results) => resolve(results.data),
-        error: () => resolve([])
-      });
-    });
-  };
-
-  const runAnalysis = async () => {
-    if (!apiKey) {
-      setShowConfig(true);
-      return;
-    }
-
-    setLoading(true);
-    try {
-      let analyticsData: any[] = [];
-      let adsenseData: any[] = [];
-
-      if (files.analytics) analyticsData = await parseCSV(files.analytics);
-      if (files.adsense) adsenseData = await parseCSV(files.adsense);
-
-      const genAI = new GoogleGenAI({ apiKey });
-      const model = "gemini-3-flash-preview";
-      
-      const prompt = ANALYSIS_PROMPT(
-        JSON.stringify(analyticsData.slice(0, 50)),
-        JSON.stringify(adsenseData.slice(0, 50))
-      );
-
-      const response = await genAI.models.generateContent({
-        model,
-        contents: prompt,
-        config: { 
-          responseMimeType: "application/json",
-          tools: [{ urlContext: {} }]
-        }
-      });
-
-      const result = JSON.parse(response.text || '{}');
-      setAnalysis(result);
-      setStep('dashboard');
-    } catch (error) {
-      console.error("Analysis failed:", error);
-      alert("L'analyse a échoué. Vérifie ta clé API et le format de tes fichiers.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const startWriting = async (priority: any) => {
-    if (!apiKey) {
-      setShowConfig(true);
-      return;
-    }
-
-    setSelectedPriority(priority);
-    setStep('writing');
-    setWritingProgress(10);
-
-    try {
-      const genAI = new GoogleGenAI({ apiKey });
-      const model = "gemini-3-flash-preview"; 
-      
-      setWritingProgress(30);
-      let prompt = WRITING_PROMPT(priority);
-
-      if (pinMetricsData) {
-        prompt += `\n\nVOICI LES IMAGES DISPONIBLES (JSON PinMetrics) :\n${JSON.stringify(pinMetricsData.slice(0, 20))}\n
-        IMPORTANT : Utilise les URLs 'imageUrl' de ce JSON pour les balises <figure>. Choisis les images les plus esthétiques et pertinentes pour chaque section.`;
-      } else {
-        prompt += `\n\nNOTE : Aucun JSON PinMetrics fourni. Utilise l'outil Google Search pour trouver des URLs d'images Pinterest (i.pinimg.com) ou de visuels aesthetics pertinents si possible, sinon utilise des placeholders descriptifs.`;
-      }
-
-      setWritingProgress(60);
-      const response = await genAI.models.generateContent({
-        model,
-        contents: prompt,
-        config: {
-          tools: [{ googleSearch: {} }]
-        }
-      });
-
-      if (!response.text) {
-        throw new Error("L'IA a retourné une réponse vide.");
-      }
-
-      setGeneratedArticle(response.text);
-      setWritingProgress(100);
-      setTimeout(() => setStep('article'), 500);
-    } catch (error: any) {
-      console.error("Writing failed:", error);
-      let message = error.message || "Erreur inconnue";
-      
-      // Gestion spécifique de l'erreur de quota 429
-      if (message.includes("RESOURCE_EXHAUSTED") || message.includes("429")) {
-        message = "Quota dépassé (Erreur 429). Ton compte gratuit est limité. Attends 1 minute avant de relancer ou passe à un plan payant sur Google AI Studio.";
-      }
-      
-      alert(`La rédaction a échoué : ${message}`);
-      setStep('dashboard');
-    }
-  };
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    alert("Copié dans le presse-papier !");
-  };
-
-  const checkAuthStatus = () => {
+  // --- Auth Logic ---
+  const checkAuthStatus = async () => {
     setIsChecking(true);
-    fetch('/api/auth-status')
-      .then(res => res.json())
-      .then(data => {
-        setIsProtected(data.isProtected);
-        setIsChecking(false);
-      })
-      .catch(() => {
-        setIsProtected(false);
-        setIsChecking(false);
-      });
+    try {
+      const res = await fetch('/api/auth-status');
+      const data = await res.json();
+      setIsProtected(data.isProtected);
+    } catch (error) {
+      console.error("Auth check failed", error);
+    } finally {
+      setIsChecking(false);
+    }
   };
 
   useEffect(() => {
@@ -253,345 +126,476 @@ export default function App() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoggingIn(true);
+    setLoginError('');
+    
     try {
-      const response = await fetch('/api/login', {
+      const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: passwordInput }),
+        body: JSON.stringify({ password: passwordInput })
       });
-      const data = await response.json();
+      
+      const data = await res.json();
       if (data.success) {
-        setIsAuthenticated(true);
         sessionStorage.setItem('app_authenticated', 'true');
+        setIsAuthenticated(true);
       } else {
-        alert("Mot de passe incorrect.");
+        setLoginError(data.message || "Accès refusé");
       }
-    } catch (err) {
-      alert("Erreur de connexion au serveur.");
+    } catch (error) {
+      setLoginError("Erreur de connexion au serveur");
     } finally {
       setIsLoggingIn(false);
     }
   };
 
-  if (!isAuthenticated && isProtected) {
+  // --- AI Logic ---
+  const saveApiKey = (key: string) => {
+    localStorage.setItem('gemini_api_key', key);
+    setApiKey(key);
+    setShowConfig(false);
+  };
+
+  const analyzeData = async (data: ArticleStat[]) => {
+    if (!apiKey) {
+      setShowConfig(true);
+      return;
+    }
+    setIsAnalyzing(true);
+    setStep('analysis');
+
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({
+        model: "gemini-3.1-pro-preview",
+        contents: ANALYSIS_PROMPT + "\n\nDonnées CSV :\n" + JSON.stringify(data.slice(0, 50)),
+        config: { responseMimeType: "application/json" }
+      });
+
+      const result = JSON.parse(response.text || '[]');
+      setOpportunities(result);
+      setStep('dashboard');
+    } catch (error) {
+      console.error("Analysis failed", error);
+      alert("L'analyse a échoué. Vérifie ta clé API.");
+      setStep('dashboard');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const writeArticle = async (opp: Opportunity) => {
+    if (!apiKey) {
+      setShowConfig(true);
+      return;
+    }
+    setIsWriting(true);
+    setStep('writing');
+    setSelectedOpportunity(opp);
+
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({
+        model: "gemini-3.1-pro-preview",
+        contents: WRITING_PROMPT(opp.title, opp.keyword),
+        config: {
+          tools: [{ googleSearch: {} }]
+        }
+      });
+
+      setGeneratedArticle(response.text || '');
+      setStep('article');
+    } catch (error) {
+      console.error("Writing failed", error);
+      alert("La rédaction a échoué. Vérifie ta clé API.");
+      setStep('dashboard');
+    } finally {
+      setIsWriting(false);
+    }
+  };
+
+  // --- File Handling ---
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    Papa.parse(file, {
+      header: true,
+      dynamicTyping: true,
+      complete: (results) => {
+        const mappedData = results.data.map((row: any) => ({
+          query: row.Query || row.Requête || row.keyword,
+          clicks: row.Clicks || row.Clics || 0,
+          impressions: row.Impressions || 0,
+          ctr: row.CTR || '0%',
+          position: row.Position || 0
+        })).filter(item => item.query);
+        setCsvData(mappedData as ArticleStat[]);
+        analyzeData(mappedData as ArticleStat[]);
+      }
+    });
+  };
+
+  // --- Render Helpers ---
+  if (isProtected && !isAuthenticated) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+      <div className="min-h-screen flex items-center justify-center p-6 bg-slate-950">
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-emerald-500/10 blur-[120px] rounded-full" />
+          <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-500/10 blur-[120px] rounded-full" />
+        </div>
+
         <motion.div 
-          initial={{ opacity: 0, scale: 0.9 }} 
-          animate={{ opacity: 1, scale: 1 }} 
-          className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-md text-center"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-card w-full max-w-md p-8 rounded-3xl relative z-10"
         >
-          <div className="w-16 h-16 bg-pink-500 rounded-2xl flex items-center justify-center text-white font-bold text-2xl mx-auto mb-6 shadow-lg">T</div>
-          <h2 className="text-2xl font-bold mb-2">Accès restreint</h2>
-          <p className="text-slate-500 mb-8 text-sm">Cette application est protégée. Entre le mot de passe pour continuer.</p>
-          
-          <form onSubmit={handleLogin} className="space-y-4">
+          <div className="flex justify-center mb-8">
+            <div className="w-16 h-16 bg-emerald-500/20 rounded-2xl flex items-center justify-center border border-emerald-500/30">
+              <Shield className="text-emerald-500" size={32} />
+            </div>
+          </div>
+
+          <h1 className="text-3xl font-display font-bold text-center mb-2">Editorial Pro</h1>
+          <p className="text-slate-400 text-center mb-8">Accès restreint aux experts éditoriaux</p>
+
+          <form onSubmit={handleLogin} className="space-y-6">
             <div className="relative">
-              <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
               <input 
-                type="password" 
+                type={showPassword ? "text" : "password"}
                 value={passwordInput}
                 onChange={(e) => setPasswordInput(e.target.value)}
-                placeholder="Mot de passe" 
-                className="w-full pl-12 pr-4 py-4 rounded-xl border border-slate-200 focus:border-pink-500 focus:ring-2 focus:ring-pink-200 outline-none transition-all font-medium"
-                autoFocus
-                disabled={isLoggingIn}
+                placeholder="Mot de passe système"
+                className="pro-input pl-12 pr-12"
+                required
               />
+              <button 
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
             </div>
+
+            {loginError && (
+              <motion.div 
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="flex items-center gap-2 text-red-400 text-sm bg-red-400/10 p-3 rounded-xl border border-red-400/20"
+              >
+                <AlertCircle size={16} />
+                {loginError}
+              </motion.div>
+            )}
+
             <button 
-              type="submit"
+              type="submit" 
               disabled={isLoggingIn}
-              className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold hover:bg-slate-800 transition-all shadow-lg active:scale-[0.98] flex items-center justify-center gap-2"
+              className="pro-button-primary w-full"
             >
-              {isLoggingIn ? <Loader2 className="animate-spin" size={18} /> : null}
-              Déverrouiller
+              {isLoggingIn ? <Loader2 className="animate-spin" /> : "Déverrouiller le terminal"}
             </button>
           </form>
-          
-          <p className="mt-8 text-[10px] text-slate-400 uppercase tracking-widest font-bold">tutoriel-iphone.fr © 2026</p>
+
+          <div className="mt-8 pt-8 border-t border-slate-800 flex justify-between items-center text-[10px] text-slate-500 font-mono uppercase tracking-widest">
+            <span>v2.4.0-PRO</span>
+            <div className="flex items-center gap-1">
+              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+              SYSTEM ONLINE
+            </div>
+          </div>
         </motion.div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
+    <div className="min-h-screen flex flex-col font-sans">
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setStep('welcome')}>
-            <div className="w-8 h-8 bg-pink-500 rounded-lg flex items-center justify-center text-white font-bold">T</div>
-            <h1 className="font-bold text-lg tracking-tight">tutoriel-iphone.fr <span className="text-slate-400 font-normal hidden sm:inline">Assistant</span></h1>
+      <header className="glass-card sticky top-0 z-50 border-x-0 border-t-0 px-6 py-4">
+        <div className="max-w-[1600px] mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center">
+              <Cpu className="text-slate-950" size={24} />
+            </div>
+            <div>
+              <h1 className="text-xl font-display font-bold tracking-tight">Editorial Pro</h1>
+              <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono uppercase">
+                <span className="text-emerald-500">Expert Mode</span>
+                <span className="opacity-30">|</span>
+                <span>Search Console Integrated</span>
+              </div>
+            </div>
           </div>
+
           <div className="flex items-center gap-3">
             <button 
               onClick={() => setShowConfig(true)}
-              className={`p-2 rounded-full transition-colors ${apiKey ? 'text-slate-400 hover:text-slate-600' : 'text-pink-500 bg-pink-50 animate-pulse'}`}
+              className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-emerald-500 hover:border-emerald-500/50 transition-all"
             >
               <Settings size={20} />
             </button>
-            <span className="text-xs font-medium px-2 py-1 bg-slate-100 rounded text-slate-600 uppercase tracking-wider">Avril 2026</span>
+            <div className="h-8 w-px bg-slate-800 mx-2" />
+            <div className="flex items-center gap-3 pl-2">
+              <div className="text-right hidden sm:block">
+                <p className="text-xs font-bold text-slate-200">Admin Expert</p>
+                <p className="text-[10px] text-slate-500">mt.duweb@gmail.com</p>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-blue-500 p-0.5">
+                <div className="w-full h-full rounded-full bg-slate-950 flex items-center justify-center text-xs font-bold">
+                  AD
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
+      <main className="flex-1 p-6 max-w-[1600px] mx-auto w-full">
         <AnimatePresence mode="wait">
-          {step === 'welcome' && (
-            <motion.div key="welcome" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="max-w-2xl mx-auto text-center py-12">
-              <div className="mb-6 inline-flex p-4 bg-pink-50 rounded-full text-pink-500">
-                <BarChart3 size={48} />
-              </div>
-              <h2 className="text-3xl font-bold mb-4 tracking-tight">Prêt pour le briefing éditorial ?</h2>
-              <p className="text-slate-600 mb-8 text-lg">Analyse tes stats pour booster ton CPC et tes revenus Amazon.</p>
-              <div className="flex flex-col items-center gap-4">
-                <button 
-                  onClick={() => setStep('export_reminder')}
-                  className="bg-slate-900 text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-slate-800 transition-all flex items-center gap-2 shadow-lg w-full sm:w-auto justify-center"
-                >
-                  Fais le point <ArrowRight size={20} />
-                </button>
-                {!apiKey && <p className="text-xs text-pink-600 font-medium flex items-center gap-1"><AlertCircle size={12} /> Configure ta clé API Gemini en haut à droite.</p>}
-              </div>
-            </motion.div>
-          )}
-
-          {step === 'export_reminder' && (
-            <motion.div key="reminder" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="max-w-3xl mx-auto">
-              <div className="bg-white rounded-2xl p-8 shadow-sm border border-slate-200">
-                <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><Clock className="text-pink-500" /> Avant de continuer, exporte tes stats :</h2>
-                
-                <div className="space-y-4 mb-8 text-sm text-slate-600">
-                  <div className="p-4 bg-blue-50 rounded-xl border border-blue-100">
-                    <p className="font-bold text-blue-700 mb-2 flex items-center gap-2"><BarChart3 size={16} /> 📊 Google Analytics :</p>
-                    <p>analytics.google.com → sélectionne la propriété <span className="font-bold">tutoriel-iphone.fr</span> → Rapports → Engagement → Pages et écrans → 28 derniers jours → Exporter → CSV</p>
-                  </div>
-                  <div className="p-4 bg-green-50 rounded-xl border border-green-100">
-                    <p className="font-bold text-green-700 mb-2 flex items-center gap-2"><TrendingUp size={16} /> 📈 Google AdSense — Rapport Claude :</p>
-                    <p>adsense.google.com → Rapports → Créer un rapport → Dimensions : <span className="font-bold">URL de la page + Date + Pays</span> → Métriques : <span className="font-bold">Revenus estimés, Pages vues, RPM pages, Impressions, RPM impressions, Visibles avec Active View, Clics</span> → 28 derniers jours → Exporter → CSV</p>
-                    <p className="mt-2 text-xs font-bold text-orange-600">⚠️ Appelle ce fichier "rapport Claude" avant de le glisser ici.</p>
-                  </div>
-                </div>
-
-                <div className="space-y-6 mb-8">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <button onClick={() => analyticsInputRef.current?.click()} className={`py-4 rounded-lg border-2 border-dashed transition-all flex flex-col items-center justify-center gap-1 ${files.analytics ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-500 hover:border-blue-300'}`}>
-                      {files.analytics ? <CheckCircle2 size={24} /> : <Upload size={24} />}
-                      <span className="text-xs font-bold">{files.analytics ? files.analytics.name : "Glisse Analytics.csv"}</span>
-                    </button>
-                    <button onClick={() => adsenseInputRef.current?.click()} className={`py-4 rounded-lg border-2 border-dashed transition-all flex flex-col items-center justify-center gap-1 ${files.adsense ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-slate-200 text-slate-500 hover:border-green-300'}`}>
-                      {files.adsense ? <CheckCircle2 size={24} /> : <Upload size={24} />}
-                      <span className="text-xs font-bold">{files.adsense ? files.adsense.name : "Glisse rapport-claude.csv"}</span>
-                    </button>
-                  </div>
-                  <input type="file" ref={analyticsInputRef} className="hidden" accept=".csv" onChange={(e) => handleFileChange('analytics', e.target.files?.[0])} />
-                  <input type="file" ref={adsenseInputRef} className="hidden" accept=".csv" onChange={(e) => handleFileChange('adsense', e.target.files?.[0])} />
-                </div>
-
-                <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-                  <button 
-                    onClick={runAnalysis}
-                    disabled={loading}
-                    className={`px-8 py-4 rounded-xl font-bold transition-all w-full sm:w-auto flex items-center justify-center gap-2 ${loading ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-slate-900 text-white hover:bg-slate-800 shadow-lg'}`}
-                  >
-                    {loading ? <Loader2 className="animate-spin" /> : <Sparkles size={20} />}
-                    Analyser les fichiers
-                  </button>
-                  <button onClick={() => setStep('dashboard')} className="text-slate-400 text-sm font-medium hover:text-slate-600 underline underline-offset-4">Continuer sans stats (skip)</button>
-                </div>
-              </div>
-            </motion.div>
-          )}
-
           {step === 'dashboard' && (
-            <motion.div key="dashboard" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
-              {/* Status Cards */}
-              <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                  <h3 className="text-slate-500 text-xs font-bold uppercase mb-4 tracking-widest">État du blog</h3>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-2xl font-bold">{(analysis?.status.status || 'ok') === 'ok' ? '✅ OK' : '⚠️ RETARD'}</p>
-                      <p className="text-sm text-slate-500">{analysis?.status.daysAgo || 'Cadence respectée'}</p>
-                    </div>
-                    <div className={`w-12 h-12 rounded-full flex items-center justify-center ${(analysis?.status.status || 'ok') === 'ok' ? 'bg-green-50 text-green-500' : 'bg-orange-50 text-orange-500'}`}><CheckCircle2 /></div>
+            <motion.div 
+              key="dashboard"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-8"
+            >
+              {/* Hero / Upload Section */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="lg:col-span-2 glass-card p-8 rounded-3xl flex flex-col justify-between relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-8 opacity-10">
+                    <Database size={120} />
+                  </div>
+                  <div className="relative z-10">
+                    <h2 className="text-4xl font-display font-bold mb-4 leading-tight">
+                      Analysez vos données <br />
+                      <span className="text-emerald-500">Search Console</span>
+                    </h2>
+                    <p className="text-lg text-slate-400 max-w-xl mb-8">
+                      Importez vos statistiques d'exportation pour identifier les opportunités de croissance SEO et générer du contenu expert.
+                    </p>
+                  </div>
+                  
+                  <div className="flex flex-wrap gap-4 relative z-10">
+                    <label className="pro-button-primary cursor-pointer">
+                      <Upload size={20} />
+                      Importer un CSV
+                      <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
+                    </label>
+                    <button className="pro-button-secondary">
+                      <Globe size={20} />
+                      Analyse en direct
+                    </button>
                   </div>
                 </div>
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                  <h3 className="text-slate-500 text-xs font-bold uppercase mb-4 tracking-widest">Dernier article</h3>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-lg font-bold truncate max-w-[180px]">{analysis?.status.lastArticle || 'Coques iPhone 16'}</p>
-                      <p className="text-sm text-slate-500">{analysis?.status.pillar || 'Pilier 2'}</p>
+
+                <div className="glass-card p-8 rounded-3xl flex flex-col gap-6">
+                  <h3 className="text-lg font-display font-bold flex items-center gap-2">
+                    <Zap className="text-emerald-500" size={20} />
+                    Stats Système
+                  </h3>
+                  <div className="space-y-4">
+                    <div className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800">
+                      <p className="text-[10px] font-mono text-slate-500 uppercase mb-1">Moteur IA</p>
+                      <p className="text-sm font-bold text-emerald-500">Gemini 3.1 Pro</p>
                     </div>
-                    <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center text-blue-500"><FileText /></div>
-                  </div>
-                </div>
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                  <h3 className="text-slate-500 text-xs font-bold uppercase mb-4 tracking-widest">CPC Moyen</h3>
-                  <div className="flex items-center justify-between">
-                    <div><p className="text-2xl font-bold">€0,09</p><p className="text-sm text-slate-500">Objectif: €0,15</p></div>
-                    <div className="w-12 h-12 bg-orange-50 rounded-full flex items-center justify-center text-orange-500"><TrendingUp /></div>
-                  </div>
-                </div>
-              </section>
-
-              {/* Top Articles & Alerts - Only show if analysis exists */}
-              {analysis ? (
-                <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                    <h3 className="text-slate-500 text-xs font-bold uppercase mb-4 tracking-widest flex items-center gap-2">
-                      <TrendingUp size={14} className="text-green-500" /> Top Articles (28j)
-                    </h3>
-                    <div className="space-y-4">
-                      {analysis.topArticles.map((art, i) => (
-                        <div key={i} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
-                          <div className="flex-1 min-w-0 pr-4">
-                            <p className="text-sm font-bold truncate">{art.title}</p>
-                            <p className="text-xs text-slate-500">RPM FR: €{art.rpmFrance} | RPM Prem: €{art.rpmPremium}</p>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm font-bold text-green-600">€{art.revenue}</span>
-                            <span className="text-lg">{art.signal}</span>
-                          </div>
-                        </div>
-                      ))}
+                    <div className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800">
+                      <p className="text-[10px] font-mono text-slate-500 uppercase mb-1">Analyse SEO</p>
+                      <p className="text-sm font-bold text-blue-400">Grounding Google Search</p>
                     </div>
-                  </div>
-
-                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                    <h3 className="text-slate-500 text-xs font-bold uppercase mb-4 tracking-widest flex items-center gap-2">
-                      <AlertCircle size={14} className="text-pink-500" /> Alertes Analytics
-                    </h3>
-                    <div className="space-y-4">
-                      {analysis.alerts.map((art, i) => (
-                        <div key={i} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
-                          <div className="flex-1 min-w-0 pr-4">
-                            <p className="text-sm font-bold truncate">{art.title}</p>
-                            <p className="text-xs text-slate-500">{art.views} vues | {art.engagement}s engagement</p>
-                          </div>
-                          <span className="text-lg">{art.signal}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </section>
-              ) : (
-                <div className="bg-blue-50 border border-blue-100 p-6 rounded-2xl text-center">
-                  <p className="text-blue-700 font-medium">Analyse tes fichiers CSV pour voir tes revenus et tes alertes réelles ici.</p>
-                </div>
-              )}
-
-              {/* Priorities */}
-              <section>
-                <h2 className="text-2xl font-bold mb-6 tracking-tight flex items-center gap-2">🎯 {analysis ? 'Priorités du jour' : 'Exemples de thèmes (Piliers)'}</h2>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {(analysis?.priorities || [
-                    { pillar: '1', title: "[Sujet Pilier 1 : Aesthetic Home Screen]", angle: "Exemple : 30 idées d'écran d'accueil pour la saison actuelle.", why: "Analyse tes stats pour voir les tendances réelles.", amazon: "", pinSearch: "iPhone Home Screen Aesthetic" },
-                    { pillar: '2', title: "[Sujet Pilier 2 : Coques & Accessoires]", angle: "Exemple : Les plus belles coques tendance du moment.", why: "Analyse tes stats pour voir les modèles les plus rentables.", amazon: "Coques aesthetic", pinSearch: "iPhone Case Aesthetic Trend" }
-                  ]).map((p, i) => (
-                    <div key={i} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-200 flex flex-col">
-                      <div className="p-6 flex-1">
-                        <div className="flex items-center justify-between mb-4">
-                          <span className="px-3 py-1 bg-pink-100 text-pink-700 rounded-full text-xs font-bold">Pilier {p.pillar}</span>
-                          <div className="flex items-center gap-2 text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
-                            <Search size={12} /> {p.pinSearch}
-                          </div>
-                        </div>
-                        <h3 className="text-xl font-bold mb-3">{p.title}</h3>
-                        <p className="text-slate-600 text-sm mb-4">{p.angle}</p>
-                        
-                        <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 mb-4">
-                          <p className="text-[10px] font-bold text-slate-400 uppercase mb-2 tracking-widest">Étape 1 : Copie ce mot-clé sur Pinterest</p>
-                          <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-200">
-                            <code className="text-pink-600 font-bold">{p.pinSearch}</code>
-                            <button onClick={() => copyToClipboard(p.pinSearch)} className="text-slate-400 hover:text-pink-500 transition-colors"><Copy size={16} /></button>
-                          </div>
-                        </div>
-
-                        <div className="space-y-3">
-                          <div className="flex items-start gap-2 text-sm"><Zap size={16} className="text-pink-500 mt-0.5 shrink-0" /><p><span className="font-bold">Pourquoi :</span> {p.why}</p></div>
-                          {p.amazon && <div className="flex items-start gap-2 text-sm"><ShoppingBag size={16} className="text-blue-500 mt-0.5 shrink-0" /><p><span className="font-bold">Amazon :</span> {p.amazon}</p></div>}
-                        </div>
-                      </div>
-                      <div className="bg-slate-50 p-4 border-t border-slate-100 flex items-center justify-between">
-                        <button 
-                          onClick={() => pinMetricsInputRef.current?.click()}
-                          className={`flex-1 mr-4 py-3 rounded-xl border-2 border-dashed font-bold text-sm transition-all flex items-center justify-center gap-2 ${pinMetricsData ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-slate-200 text-slate-500 hover:border-pink-300 hover:text-pink-600'}`}
-                        >
-                          {pinMetricsData ? <CheckCircle2 size={18} /> : <Upload size={18} />}
-                          {pinMetricsData ? 'JSON PinMetrics chargé ✓' : 'Étape 2 : Glisse le JSON PinMetrics ici'}
-                        </button>
-                        <input type="file" ref={pinMetricsInputRef} className="hidden" accept=".json" onChange={(e) => handleFileChange('pinMetrics', e.target.files?.[0])} />
-                        
-                        <button 
-                          onClick={() => startWriting(p)} 
-                          className={`px-6 py-3 rounded-xl font-bold transition-all flex items-center gap-2 shadow-lg ${pinMetricsData ? 'bg-slate-900 text-white hover:bg-slate-800' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
-                        >
-                          <Sparkles size={18} /> Rédiger
-                        </button>
+                    <div className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800">
+                      <p className="text-[10px] font-mono text-slate-500 uppercase mb-1">Statut Clé API</p>
+                      <div className="flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full ${apiKey ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                        <p className="text-sm font-bold">{apiKey ? 'Connectée' : 'Manquante'}</p>
                       </div>
                     </div>
-                  ))}
+                  </div>
                 </div>
-              </section>
+              </div>
 
-              {/* Bonus & Recyclage - Only show if analysis exists */}
-              {analysis && (
-                <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                    <h3 className="text-slate-500 text-xs font-bold uppercase mb-4 tracking-widest flex items-center gap-2">
-                      <Sparkles size={14} className="text-pink-500" /> Suggestions Bonus
-                    </h3>
-                    <div className="space-y-4">
-                      {analysis.bonus.map((b, i) => (
-                        <div key={i} className="p-4 bg-slate-50 rounded-xl">
-                          <p className="font-bold text-sm mb-1">{b.title}</p>
-                          <p className="text-xs text-slate-600">{b.content}</p>
-                        </div>
-                      ))}
-                    </div>
+              {/* Opportunities Grid */}
+              {opportunities.length > 0 && (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-2xl font-display font-bold">Opportunités Prioritaires</h3>
+                    <span className="px-3 py-1 bg-emerald-500/10 text-emerald-500 text-xs font-bold rounded-full border border-emerald-500/20">
+                      {opportunities.length} Détectées
+                    </span>
                   </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                    {opportunities.map((opp, idx) => (
+                      <motion.div 
+                        key={idx}
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: idx * 0.1 }}
+                        className="glass-card p-6 rounded-3xl hover:border-emerald-500/50 transition-all group"
+                      >
+                        <div className="flex justify-between items-start mb-4">
+                          <div className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider ${
+                            opp.priority === 'High' ? 'bg-red-500/10 text-red-500' : 'bg-blue-500/10 text-blue-500'
+                          }`}>
+                            {opp.priority} Priority
+                          </div>
+                          <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-slate-500 group-hover:text-emerald-500 transition-colors">
+                            <TrendingUp size={18} />
+                          </div>
+                        </div>
+                        
+                        <h4 className="text-lg font-bold mb-2 group-hover:text-emerald-400 transition-colors">{opp.title}</h4>
+                        <p className="text-xs text-slate-500 mb-4 line-clamp-2">{opp.reason}</p>
+                        
+                        <div className="p-3 bg-slate-950/50 rounded-xl border border-slate-800 mb-6">
+                          <p className="text-[10px] font-mono text-slate-500 uppercase mb-1">Mot-clé cible</p>
+                          <p className="text-sm font-bold text-slate-300">{opp.keyword}</p>
+                        </div>
 
-                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                    <h3 className="text-slate-500 text-xs font-bold uppercase mb-4 tracking-widest flex items-center gap-2">
-                      <Repeat size={14} className="text-blue-500" /> Recyclage en.astucieusement.com
-                    </h3>
-                    <div className="space-y-4">
-                      {analysis.recyclage?.map((r, i) => (
-                        <div key={i} className="p-4 bg-blue-50 rounded-xl border border-blue-100">
-                          <p className="text-xs text-blue-500 font-bold mb-1">Original: {r.original}</p>
-                          <p className="text-sm font-bold text-slate-800">Angle EN: {r.englishAngle}</p>
-                        </div>
-                      ))}
-                    </div>
+                        <button 
+                          onClick={() => writeArticle(opp)}
+                          className="w-full pro-button-primary py-2.5 text-sm"
+                        >
+                          Rédiger l'article expert
+                          <ArrowRight size={16} />
+                        </button>
+                      </motion.div>
+                    ))}
                   </div>
-                </section>
+                </div>
               )}
+            </motion.div>
+          )}
+
+          {step === 'analysis' && (
+            <motion.div 
+              key="analysis"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex flex-col items-center justify-center py-20"
+            >
+              <div className="relative mb-8">
+                <div className="w-24 h-24 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Terminal className="text-emerald-500" size={32} />
+                </div>
+              </div>
+              <h2 className="text-3xl font-display font-bold mb-4">Analyse Neuronale en cours</h2>
+              <p className="text-slate-500 font-mono animate-pulse">Extraction des patterns SEO... [0x44F2]</p>
             </motion.div>
           )}
 
           {step === 'writing' && (
-            <motion.div key="writing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-2xl mx-auto py-20 text-center">
-              <div className="relative w-24 h-24 mx-auto mb-8">
-                <div className="absolute inset-0 border-4 border-pink-100 rounded-full"></div>
-                <div className="absolute inset-0 border-4 border-pink-500 rounded-full border-t-transparent animate-spin"></div>
-                <div className="absolute inset-0 flex items-center justify-center font-bold text-pink-500">{writingProgress}%</div>
+            <motion.div 
+              key="writing"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex flex-col items-center justify-center py-20"
+            >
+              <div className="relative mb-8">
+                <div className="w-24 h-24 rounded-full border-4 border-blue-500/20 border-t-blue-500 animate-spin" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Sparkles className="text-blue-500" size={32} />
+                </div>
               </div>
-              <h2 className="text-2xl font-bold mb-4">Rédaction en cours...</h2>
-              <p className="text-slate-500 italic">"Génération du contenu SEO et optimisation RankMath..."</p>
+              <h2 className="text-3xl font-display font-bold mb-4">Rédaction Expert</h2>
+              <p className="text-slate-500 text-center max-w-md">
+                Génération d'un contenu de 1200+ mots optimisé RankMath pour <br />
+                <span className="text-blue-400 font-bold">"{selectedOpportunity?.keyword}"</span>
+              </p>
             </motion.div>
           )}
 
           {step === 'article' && (
-            <motion.div key="article" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-4xl mx-auto">
-              <div className="flex items-center justify-between mb-6">
-                <button onClick={() => setStep('dashboard')} className="flex items-center gap-2 text-slate-500 hover:text-slate-900 font-medium"><ChevronLeft size={20} /> Dashboard</button>
-                <button onClick={() => copyToClipboard(generatedArticle)} className="bg-slate-900 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-slate-800 shadow-lg"><Copy size={18} /> Copier le code HTML</button>
+            <motion.div 
+              key="article"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="max-w-5xl mx-auto space-y-6"
+            >
+              <div className="flex items-center justify-between">
+                <button 
+                  onClick={() => setStep('dashboard')}
+                  className="flex items-center gap-2 text-slate-500 hover:text-slate-200 font-medium transition-colors"
+                >
+                  <ChevronLeft size={20} />
+                  Retour au Dashboard
+                </button>
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => {
+                      const blob = new Blob([generatedArticle], { type: 'text/html' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `article-${selectedOpportunity?.keyword}.html`;
+                      a.click();
+                    }}
+                    className="pro-button-secondary py-2 px-4 text-sm"
+                  >
+                    <Download size={18} />
+                    Exporter .html
+                  </button>
+                  <button 
+                    onClick={() => {
+                      navigator.clipboard.writeText(generatedArticle);
+                      alert("Code HTML copié !");
+                    }}
+                    className="pro-button-primary py-2 px-4 text-sm"
+                  >
+                    <Copy size={18} />
+                    Copier le code
+                  </button>
+                </div>
               </div>
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="p-8 bg-slate-50 border-b border-slate-100"><h2 className="text-3xl font-bold tracking-tight mb-2">{selectedPriority?.title}</h2><p className="text-slate-500">Prêt pour WordPress</p></div>
-                <div className="p-8"><pre className="whitespace-pre-wrap font-mono text-sm bg-slate-900 text-slate-300 p-6 rounded-xl overflow-x-auto">{generatedArticle}</pre></div>
+
+              <div className="glass-card rounded-3xl overflow-hidden">
+                <div className="p-8 border-b border-slate-800 bg-slate-900/30">
+                  <div className="flex items-center gap-3 mb-4">
+                    <span className="px-2 py-1 bg-emerald-500/10 text-emerald-500 text-[10px] font-bold rounded border border-emerald-500/20 uppercase">SEO Optimized</span>
+                    <span className="px-2 py-1 bg-blue-500/10 text-blue-400 text-[10px] font-bold rounded border border-blue-500/20 uppercase">Expert Draft</span>
+                  </div>
+                  <h2 className="text-4xl font-display font-bold">{selectedOpportunity?.title}</h2>
+                </div>
+                
+                <div className="grid grid-cols-1 lg:grid-cols-3">
+                  <div className="lg:col-span-2 p-8 border-r border-slate-800">
+                    <div className="prose prose-invert max-w-none markdown-body" dangerouslySetInnerHTML={{ __html: generatedArticle }} />
+                  </div>
+                  <div className="p-8 space-y-8 bg-slate-950/30">
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Checklist RankMath</h4>
+                      <div className="space-y-3">
+                        {[
+                          "Mot-clé dans le titre H1",
+                          "Mot-clé dans le premier paragraphe",
+                          "Densité de mot-clé optimale",
+                          "Structure H2/H3 respectée",
+                          "Longueur de contenu (>1200 mots)",
+                          "Optimisation pour la recherche sémantique"
+                        ].map((item, i) => (
+                          <div key={i} className="flex items-center gap-3 text-sm text-slate-400">
+                            <CheckCircle2 size={16} className="text-emerald-500" />
+                            {item}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="p-6 bg-emerald-500/5 rounded-2xl border border-emerald-500/10">
+                      <h4 className="text-sm font-bold text-emerald-500 mb-2">Conseil Pro</h4>
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        N'oubliez pas d'ajouter des liens internes vers vos articles iPhone existants pour renforcer le maillage interne.
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </motion.div>
           )}
@@ -602,47 +606,85 @@ export default function App() {
       <AnimatePresence>
         {showConfig && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowConfig(false)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
-            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-              <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-                <h3 className="font-bold text-lg flex items-center gap-2"><Key className="text-pink-500" size={20} /> Configuration API</h3>
-                <button onClick={() => setShowConfig(false)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }} 
+              onClick={() => setShowConfig(false)} 
+              className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" 
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }} 
+              animate={{ opacity: 1, scale: 1, y: 0 }} 
+              exit={{ opacity: 0, scale: 0.95, y: 20 }} 
+              className="relative glass-card rounded-3xl w-full max-w-md overflow-hidden"
+            >
+              <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+                <h3 className="font-display font-bold text-lg flex items-center gap-2">
+                  <Settings className="text-emerald-500" size={20} /> 
+                  Configuration Système
+                </h3>
+                <button onClick={() => setShowConfig(false)} className="text-slate-500 hover:text-slate-200 transition-colors">
+                  <X size={20} />
+                </button>
               </div>
-              <div className="p-6">
-                <div className="mb-6 p-3 bg-slate-50 rounded-xl border border-slate-100">
-                  <div className="flex justify-between items-start mb-2">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Statut Sécurité</p>
+              
+              <div className="p-6 space-y-6">
+                <div className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800">
+                  <div className="flex justify-between items-start mb-3">
+                    <p className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Sécurité</p>
                     <button 
-                      onClick={() => checkAuthStatus()}
-                      className="text-[10px] text-pink-500 font-bold hover:underline flex items-center gap-1"
+                      onClick={checkAuthStatus}
+                      className="text-[10px] text-emerald-500 font-bold hover:underline flex items-center gap-1"
+                      disabled={isChecking}
                     >
-                      <RefreshCw size={10} className={isChecking ? "animate-spin" : ""} />
-                      Actualiser
+                      {isChecking ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
+                      Sync
                     </button>
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${isProtected ? 'bg-green-500 animate-pulse' : 'bg-slate-300'}`}></div>
+                    <div className={`w-2 h-2 rounded-full ${isProtected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-700'}`}></div>
                     <p className="text-xs font-medium">
                       {isProtected 
-                        ? 'Protection par mot de passe ACTIVE' 
-                        : 'Protection INACTIVE (Configure VITE_APP_PASSWORD)'}
+                        ? 'Protection Mot de Passe ACTIVE' 
+                        : 'Protection INACTIVE (VITE_APP_PASSWORD)'}
                     </p>
                   </div>
                 </div>
 
-                <p className="text-sm text-slate-600 mb-4">Entre ta clé API Gemini pour activer l'analyse.</p>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Clé API Gemini</label>
-                    <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="AIzaSy..." className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-pink-500 focus:ring-2 focus:ring-pink-200 outline-none transition-all font-mono text-sm" />
+                    <label className="block text-[10px] font-mono text-slate-500 uppercase mb-2">Clé API Gemini Pro</label>
+                    <div className="relative">
+                      <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600" size={16} />
+                      <input 
+                        type="password" 
+                        value={apiKey} 
+                        onChange={(e) => setApiKey(e.target.value)} 
+                        placeholder="AIzaSy..." 
+                        className="pro-input pl-12 text-sm font-mono" 
+                      />
+                    </div>
                   </div>
-                  <button onClick={() => saveApiKey(apiKey)} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold hover:bg-slate-800 transition-all">Enregistrer</button>
+                  <button 
+                    onClick={() => saveApiKey(apiKey)} 
+                    className="pro-button-primary w-full"
+                  >
+                    Mettre à jour les paramètres
+                  </button>
                 </div>
               </div>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
+
+      {/* Footer */}
+      <footer className="p-6 border-t border-slate-900 text-center">
+        <p className="text-[10px] text-slate-600 font-mono uppercase tracking-[0.2em]">
+          © 2026 Editorial Pro • Advanced Neural Editorial Interface
+        </p>
+      </footer>
     </div>
   );
 }

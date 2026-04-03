@@ -1,31 +1,65 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
 @import "tailwindcss";
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-display: "Space Grotesk", sans-serif;
+  --color-brand: #10b981;
 }
 
 @layer base {
   body {
-    @apply font-sans antialiased;
+    @apply bg-slate-950 text-slate-200 antialiased;
   }
 }
 
+.glass-card {
+  @apply bg-slate-900/50 backdrop-blur-xl border border-slate-800/50 shadow-2xl;
+}
+
+.pro-input {
+  @apply w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all;
+}
+
+.pro-button {
+  @apply px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.pro-button-primary {
+  @apply bg-emerald-500 text-slate-950 hover:bg-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.2)];
+}
+
+.pro-button-secondary {
+  @apply bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-slate-950;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-800 rounded-full hover:bg-slate-700;
+}
+
 .markdown-body h2 {
-  @apply text-2xl font-bold mt-8 mb-4 text-slate-900;
+  @apply text-2xl font-bold mt-8 mb-4 text-slate-100 font-display;
 }
 
 .markdown-body h3 {
-  @apply text-xl font-bold mt-6 mb-3 text-slate-800;
+  @apply text-xl font-bold mt-6 mb-3 text-slate-200 font-display;
 }
 
 .markdown-body p {
-  @apply mb-4 leading-relaxed text-slate-700;
+  @apply mb-4 leading-relaxed text-slate-400;
 }
 
 .markdown-body ul, .markdown-body ol {
-  @apply mb-4 ml-6 list-disc;
+  @apply mb-4 ml-6 list-disc text-slate-400;
 }
 
 .markdown-body li {
@@ -33,13 +67,13 @@
 }
 
 .markdown-body strong {
-  @apply font-bold text-slate-900;
+  @apply font-bold text-slate-100;
 }
 
 .markdown-body em {
-  @apply italic;
+  @apply italic text-slate-300;
 }
 
 .markdown-body hr {
-  @apply my-8 border-slate-200;
+  @apply my-8 border-slate-800;
 }
