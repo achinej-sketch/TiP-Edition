@@ -2,6 +2,8 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import dotenv from "dotenv";
+import axios from "axios";
+import { XMLParser } from "fast-xml-parser";
 
 dotenv.config();
 
@@ -41,6 +43,49 @@ async function startServer() {
         envKeys: Object.keys(process.env).filter(k => k.startsWith('VITE_'))
       } : {}
     });
+  });
+
+  // API: Fetch Sitemap
+  app.post("/api/fetch-sitemap", async (req, res) => {
+    const { url } = req.body;
+    if (!url) return res.status(400).json({ error: "URL manquante" });
+
+    try {
+      const response = await axios.get(url, { 
+        timeout: 10000,
+        headers: { 'User-Agent': 'Mozilla/5.0 (EditorialSaaS/1.0)' }
+      });
+      const parser = new XMLParser();
+      const jsonObj = parser.parse(response.data);
+      
+      let urls: string[] = [];
+      
+      // Handle sitemapindex
+      if (jsonObj.sitemapindex && jsonObj.sitemapindex.sitemap) {
+        const sitemaps = Array.isArray(jsonObj.sitemapindex.sitemap) 
+          ? jsonObj.sitemapindex.sitemap 
+          : [jsonObj.sitemapindex.sitemap];
+        
+        // Just return the list of sitemaps for now, or we could fetch them all
+        // For simplicity, let's return the locations
+        urls = sitemaps.map((s: any) => s.loc);
+        return res.json({ success: true, type: 'index', urls: urls.slice(0, 500) });
+      }
+
+      // Handle urlset
+      if (jsonObj.urlset && jsonObj.urlset.url) {
+        const entries = Array.isArray(jsonObj.urlset.url) 
+          ? jsonObj.urlset.url 
+          : [jsonObj.urlset.url];
+        urls = entries.map((e: any) => e.loc);
+        return res.json({ success: true, type: 'urlset', urls: urls.slice(0, 1000) });
+      }
+
+      res.json({ success: true, urls: [] });
+    } catch (error) {
+      console.error("Sitemap fetch error:", error);
+      res.status(500).json({ error: "Impossible de lire le sitemap. Vérifiez l'URL." });
+    }
   });
 
   // Vite middleware pour le développement

@@ -115,14 +115,17 @@ export default function App() {
   const [apiKey, setApiKey] = useState<string>(localStorage.getItem('gemini_api_key') || '');
   const [showConfig, setShowConfig] = useState(false);
   
-  const [csvData, setCsvData] = useState<DataRow[]>([]);
+  const [seoData, setSeoData] = useState<DataRow[]>([]);
+  const [adsenseData, setAdsenseData] = useState<DataRow[]>([]);
+  const [sitemapUrls, setSitemapUrls] = useState<string[]>([]);
+  const [sitemapUrl, setSitemapUrl] = useState<string>('');
+  const [isFetchingSitemap, setIsFetchingSitemap] = useState(false);
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
   const [generatedArticle, setGeneratedArticle] = useState<string>('');
   const [isWriting, setIsWriting] = useState(false);
   const [step, setStep] = useState<'dashboard' | 'analysis' | 'writing' | 'article'>('dashboard');
-  const [dataType, setDataType] = useState<'SEO' | 'AdSense' | 'Mixed'>('Mixed');
 
   // --- Auth Logic ---
   const checkAuthStatus = async () => {
@@ -175,7 +178,29 @@ export default function App() {
     setShowConfig(false);
   };
 
-  const analyzeData = async (data: DataRow[]) => {
+  const fetchSitemap = async () => {
+    if (!sitemapUrl) return;
+    setIsFetchingSitemap(true);
+    try {
+      const res = await fetch('/api/fetch-sitemap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: sitemapUrl })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSitemapUrls(data.urls);
+      } else {
+        alert(data.error);
+      }
+    } catch (error) {
+      alert("Erreur lors de la récupération du sitemap");
+    } finally {
+      setIsFetchingSitemap(false);
+    }
+  };
+
+  const analyzeData = async () => {
     if (!apiKey) {
       setShowConfig(true);
       return;
@@ -185,9 +210,26 @@ export default function App() {
 
     try {
       const ai = new GoogleGenAI({ apiKey });
+      const combinedContext = {
+        seo: seoData.slice(0, 40),
+        adsense: adsenseData.slice(0, 40),
+        sitemap: sitemapUrls.slice(0, 100), // Provide a sample of existing pages
+        niche: "Tutoriels iPhone, Apple, iOS, iPad"
+      };
+
+      const customPrompt = ANALYSIS_PROMPT + `
+      
+      IMPORTANT : Voici la liste des URLs actuelles de mon site (Sitemap) :
+      ${JSON.stringify(combinedContext.sitemap)}
+      
+      Utilise cette liste pour :
+      1. Ne pas suggérer d'articles qui existent déjà (sauf si c'est pour une mise à jour majeure).
+      2. Identifier les sujets manquants dans ma niche.
+      `;
+
       const response = await ai.models.generateContent({
         model: "gemini-3.1-pro-preview",
-        contents: ANALYSIS_PROMPT + "\n\nDonnées CSV :\n" + JSON.stringify(data.slice(0, 50)),
+        contents: customPrompt + "\n\nCONTEXTE ET DONNÉES :\n" + JSON.stringify(combinedContext),
         config: { responseMimeType: "application/json" }
       });
 
@@ -234,41 +276,42 @@ export default function App() {
   };
 
   // --- File Handling ---
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSeoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     Papa.parse(file, {
       header: true,
       dynamicTyping: true,
       skipEmptyLines: true,
       complete: (results) => {
-        const mappedData = results.data.map((row: any) => {
-          // Détection AdSense
-          const isAdSense = row['Page'] || row['Estimated earnings'] || row['Revenue'];
-          if (isAdSense) {
-            setDataType('AdSense');
-            return {
-              page: row['Page'] || row['URL'],
-              revenue: row['Estimated earnings'] || row['Revenue'] || row['Revenus'],
-              adRequests: row['Ad requests'] || row['Requêtes d\'annonce'],
-              rpm: row['Ad request RPM'] || row['RPM des requêtes d\'annonce'],
-              clicks: row['Clicks'] || row['Clics']
-            };
-          }
-          // Détection Search Console
-          setDataType('SEO');
-          return {
-            query: row['Query'] || row['Requête'] || row['keyword'],
-            clicks: row['Clicks'] || row['Clics'] || 0,
-            impressions: row['Impressions'] || 0,
-            ctr: row['CTR'] || '0%',
-            position: row['Position'] || 0
-          };
-        }).filter(item => (item as any).query || (item as any).page);
-        
-        setCsvData(mappedData as DataRow[]);
-        analyzeData(mappedData as DataRow[]);
+        const mapped = results.data.map((row: any) => ({
+          query: row['Query'] || row['Requête'] || row['keyword'],
+          clicks: row['Clicks'] || row['Clics'] || 0,
+          impressions: row['Impressions'] || 0,
+          ctr: row['CTR'] || '0%',
+          position: row['Position'] || 0
+        })).filter(i => (i as any).query);
+        setSeoData(mapped as DataRow[]);
+      }
+    });
+  };
+
+  const handleAdsenseUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    Papa.parse(file, {
+      header: true,
+      dynamicTyping: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        const mapped = results.data.map((row: any) => ({
+          page: row['Page'] || row['URL'],
+          revenue: row['Estimated earnings'] || row['Revenue'] || row['Revenus'],
+          adRequests: row['Ad requests'] || row['Requêtes d\'annonce'],
+          rpm: row['Ad request RPM'] || row['RPM des requêtes d\'annonce'],
+          clicks: row['Clicks'] || row['Clics']
+        })).filter(i => (i as any).page);
+        setAdsenseData(mapped as DataRow[]);
       }
     });
   };
@@ -401,27 +444,67 @@ export default function App() {
                   <div className="relative z-10">
                     <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-50 text-indigo-600 text-xs font-bold rounded-full mb-6">
                       <Sparkles size={14} />
-                      IA Générative & Analyse de Données
+                      Analyse Croisée SEO & AdSense
                     </div>
                     <h2 className="text-5xl font-extrabold mb-6 tracking-tight leading-[1.1]">
-                      Boostez vos revenus <br />
-                      <span className="gradient-text">AdSense & SEO</span>
+                      Optimisez vos revenus <br />
+                      <span className="gradient-text">iPhone & Apple</span>
                     </h2>
                     <p className="text-lg text-slate-500 max-w-xl mb-10 leading-relaxed">
-                      Importez vos exports **Search Console** ou **AdSense** pour identifier les pages à fort potentiel et générer des articles experts en un clic.
+                      Importez vos exports **Search Console** ET **AdSense** pour une analyse neuronale de votre site **tutoriel-iphone.fr**.
                     </p>
+                    
+                    <div className="max-w-md mb-8 space-y-3">
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">3. Sitemap URL (Optionnel)</label>
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <Globe className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                          <input 
+                            type="text" 
+                            value={sitemapUrl}
+                            onChange={(e) => setSitemapUrl(e.target.value)}
+                            placeholder="https://tutoriel-iphone.fr/sitemap.xml"
+                            className="input-field pl-12 py-3"
+                          />
+                        </div>
+                        <button 
+                          onClick={fetchSitemap}
+                          disabled={isFetchingSitemap || !sitemapUrl}
+                          className="btn-secondary py-3 px-4"
+                        >
+                          {isFetchingSitemap ? <Loader2 className="animate-spin" size={18} /> : <RefreshCw size={18} />}
+                        </button>
+                      </div>
+                      {sitemapUrls.length > 0 && (
+                        <p className="text-[10px] text-emerald-600 font-bold flex items-center gap-1 ml-1">
+                          <CheckCircle2 size={12} />
+                          {sitemapUrls.length} URLs indexées avec succès
+                        </p>
+                      )}
+                    </div>
                   </div>
                   
                   <div className="flex flex-wrap gap-4 relative z-10">
-                    <label className="btn-primary cursor-pointer shadow-indigo-100">
+                    <label className={`btn-secondary cursor-pointer ${seoData.length > 0 ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : ''}`}>
                       <Upload size={20} />
-                      Importer un CSV
-                      <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
+                      {seoData.length > 0 ? 'SEO Importé' : '1. Import SEO (CSV)'}
+                      <input type="file" accept=".csv" onChange={handleSeoUpload} className="hidden" />
                     </label>
-                    <button className="btn-secondary">
-                      <ExternalLink size={20} />
-                      Voir la documentation
-                    </button>
+                    <label className={`btn-secondary cursor-pointer ${adsenseData.length > 0 ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : ''}`}>
+                      <DollarSign size={20} />
+                      {adsenseData.length > 0 ? 'AdSense Importé' : '2. Import AdSense (CSV)'}
+                      <input type="file" accept=".csv" onChange={handleAdsenseUpload} className="hidden" />
+                    </label>
+                    
+                    {(seoData.length > 0 || adsenseData.length > 0) && (
+                      <button 
+                        onClick={analyzeData}
+                        className="btn-primary shadow-indigo-100 animate-pulse"
+                      >
+                        <Zap size={20} />
+                        Lancer l'Analyse Croisée
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -433,12 +516,16 @@ export default function App() {
                     </h3>
                     <div className="space-y-6">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-slate-600">Moteur IA</span>
-                        <span className="text-sm font-bold text-slate-900">Gemini 3.1 Pro</span>
+                        <span className="text-sm font-medium text-slate-600">Données SEO</span>
+                        <span className={`text-sm font-bold ${seoData.length > 0 ? 'text-emerald-500' : 'text-slate-400'}`}>
+                          {seoData.length > 0 ? `${seoData.length} lignes` : 'En attente'}
+                        </span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-slate-600">Mode Analyse</span>
-                        <span className="px-2 py-1 bg-violet-50 text-violet-600 text-[10px] font-bold rounded-lg uppercase">{dataType}</span>
+                        <span className="text-sm font-medium text-slate-600">Données AdSense</span>
+                        <span className={`text-sm font-bold ${adsenseData.length > 0 ? 'text-emerald-500' : 'text-slate-400'}`}>
+                          {adsenseData.length > 0 ? `${adsenseData.length} lignes` : 'En attente'}
+                        </span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-medium text-slate-600">Clé API</span>
@@ -468,7 +555,7 @@ export default function App() {
                   <div className="flex items-center justify-between">
                     <div>
                       <h3 className="text-3xl font-extrabold tracking-tight">Opportunités détectées</h3>
-                      <p className="text-slate-500 mt-1">Basé sur votre dernier import {dataType}.</p>
+                      <p className="text-slate-500 mt-1">Analyse croisée SEO & AdSense terminée.</p>
                     </div>
                     <div className="flex gap-2">
                       <div className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600">
@@ -707,11 +794,11 @@ export default function App() {
                     </button>
                   </div>
                   <div className="flex items-center gap-3">
-                    <div className={`w-2.5 h-2.5 rounded-full ${isProtected ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.4)]' : 'bg-slate-300'}`}></div>
+                    <div className={`w-2.5 h-2.5 rounded-full ${isProtected ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.4)]' : 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.4)]'}`}></div>
                     <p className="text-sm font-bold text-slate-700">
                       {isProtected 
-                        ? 'Protection par mot de passe ACTIVE' 
-                        : 'Protection INACTIVE'}
+                        ? 'Protection ACTIVE' 
+                        : 'Protection INACTIVE (Vérifiez Vercel)'}
                     </p>
                   </div>
                 </div>
