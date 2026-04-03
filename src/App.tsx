@@ -162,7 +162,7 @@ export default function App() {
 
     try {
       const genAI = new GoogleGenAI({ apiKey });
-      const model = "gemini-3.1-pro-preview";
+      const model = "gemini-3-flash-preview"; // Plus stable et rapide pour les longs textes
       
       setWritingProgress(30);
       const prompt = WRITING_PROMPT(priority);
@@ -173,12 +173,16 @@ export default function App() {
         contents: prompt
       });
 
-      setGeneratedArticle(response.text || '');
+      if (!response.text) {
+        throw new Error("L'IA a retourné une réponse vide.");
+      }
+
+      setGeneratedArticle(response.text);
       setWritingProgress(100);
       setTimeout(() => setStep('article'), 500);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Writing failed:", error);
-      alert("La rédaction a échoué.");
+      alert(`La rédaction a échoué : ${error.message || "Erreur inconnue"}. Vérifie ta clé API ou réessaie.`);
       setStep('dashboard');
     }
   };
