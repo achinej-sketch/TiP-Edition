@@ -78,7 +78,8 @@ export default function App() {
   const [step, setStep] = useState<'welcome' | 'export_reminder' | 'dashboard' | 'writing' | 'article'>('welcome');
   const [apiKey, setApiKey] = useState<string>(localStorage.getItem('gemini_api_key') || '');
   const [showConfig, setShowConfig] = useState(false);
-  const [files, setFiles] = useState<{ analytics?: File, adsense?: File }>({});
+  const [files, setFiles] = useState<{ analytics?: File, adsense?: File, pinMetrics?: File }>({});
+  const [pinMetricsData, setPinMetricsData] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [selectedPriority, setSelectedPriority] = useState<any>(null);
@@ -87,6 +88,7 @@ export default function App() {
 
   const analyticsInputRef = useRef<HTMLInputElement>(null);
   const adsenseInputRef = useRef<HTMLInputElement>(null);
+  const pinMetricsInputRef = useRef<HTMLInputElement>(null);
 
   const saveApiKey = (key: string) => {
     setApiKey(key);
@@ -94,9 +96,21 @@ export default function App() {
     setShowConfig(false);
   };
 
-  const handleFileChange = (type: 'analytics' | 'adsense', file: File | undefined) => {
+  const handleFileChange = async (type: 'analytics' | 'adsense' | 'pinMetrics', file: File | undefined) => {
     if (file) {
       setFiles(prev => ({ ...prev, [type]: file }));
+      if (type === 'pinMetrics') {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const json = JSON.parse(e.target?.result as string);
+            setPinMetricsData(Array.isArray(json) ? json : [json]);
+          } catch (err) {
+            alert("Erreur lors de la lecture du JSON PinMetrics.");
+          }
+        };
+        reader.readAsText(file);
+      }
     }
   };
 
@@ -162,15 +176,25 @@ export default function App() {
 
     try {
       const genAI = new GoogleGenAI({ apiKey });
-      const model = "gemini-3-flash-preview"; // Plus stable et rapide pour les longs textes
+      const model = "gemini-3-flash-preview"; 
       
       setWritingProgress(30);
-      const prompt = WRITING_PROMPT(priority);
+      let prompt = WRITING_PROMPT(priority);
+
+      if (pinMetricsData) {
+        prompt += `\n\nVOICI LES IMAGES DISPONIBLES (JSON PinMetrics) :\n${JSON.stringify(pinMetricsData.slice(0, 20))}\n
+        IMPORTANT : Utilise les URLs 'imageUrl' de ce JSON pour les balises <figure>. Choisis les images les plus esthétiques et pertinentes pour chaque section.`;
+      } else {
+        prompt += `\n\nNOTE : Aucun JSON PinMetrics fourni. Utilise l'outil Google Search pour trouver des URLs d'images Pinterest (i.pinimg.com) ou de visuels aesthetics pertinents si possible, sinon utilise des placeholders descriptifs.`;
+      }
 
       setWritingProgress(60);
       const response = await genAI.models.generateContent({
         model,
-        contents: prompt
+        contents: prompt,
+        config: {
+          tools: [{ googleSearch: {} }]
+        }
       });
 
       if (!response.text) {
@@ -383,7 +407,16 @@ export default function App() {
                         </div>
                       </div>
                       <div className="bg-slate-50 p-4 border-t border-slate-100 flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-xs font-medium text-slate-500"><Search size={14} /> {p.pinSearch}</div>
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2 text-xs font-medium text-slate-500"><Search size={14} /> {p.pinSearch}</div>
+                          <button 
+                            onClick={() => pinMetricsInputRef.current?.click()}
+                            className={`text-[10px] font-bold flex items-center gap-1 transition-colors ${pinMetricsData ? 'text-green-600' : 'text-pink-500 hover:text-pink-700'}`}
+                          >
+                            <ImageIcon size={12} /> {pinMetricsData ? 'JSON PinMetrics chargé ✓' : '📎 PinMetrics JSON requis'}
+                          </button>
+                          <input type="file" ref={pinMetricsInputRef} className="hidden" accept=".json" onChange={(e) => handleFileChange('pinMetrics', e.target.files?.[0])} />
+                        </div>
                         <button onClick={() => startWriting(p)} className="bg-slate-900 text-white px-6 py-2 rounded-lg font-bold hover:bg-slate-800 transition-all flex items-center gap-2">
                           <Sparkles size={16} /> Rédiger
                         </button>
