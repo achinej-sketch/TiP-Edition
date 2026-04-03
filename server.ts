@@ -1,6 +1,9 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 async function startServer() {
   const app = express();
@@ -27,7 +30,17 @@ async function startServer() {
 
   // API pour vérifier si le mot de passe est configuré
   app.get("/api/auth-status", (req, res) => {
-    res.json({ isProtected: !!process.env.VITE_APP_PASSWORD });
+    const pass = process.env.VITE_APP_PASSWORD;
+    console.log("Vérification du mot de passe dans l'environnement...");
+    console.log("Variable VITE_APP_PASSWORD trouvée ?", !!pass);
+    
+    res.json({ 
+      isProtected: !!pass,
+      debug: process.env.NODE_ENV === 'development' ? {
+        hasPass: !!pass,
+        envKeys: Object.keys(process.env).filter(k => k.startsWith('VITE_'))
+      } : {}
+    });
   });
 
   // Vite middleware pour le développement

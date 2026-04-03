@@ -78,6 +78,7 @@ export default function App() {
   const [step, setStep] = useState<'welcome' | 'export_reminder' | 'dashboard' | 'writing' | 'article'>('welcome');
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!sessionStorage.getItem('app_authenticated'));
   const [isProtected, setIsProtected] = useState<boolean>(false);
+  const [isChecking, setIsChecking] = useState<boolean>(false);
   const [passwordInput, setPasswordInput] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [apiKey, setApiKey] = useState<string>(localStorage.getItem('gemini_api_key') || '');
@@ -230,12 +231,22 @@ export default function App() {
     alert("Copié dans le presse-papier !");
   };
 
-  useEffect(() => {
-    // Vérifier si la protection est active sur le serveur
+  const checkAuthStatus = () => {
+    setIsChecking(true);
     fetch('/api/auth-status')
       .then(res => res.json())
-      .then(data => setIsProtected(data.isProtected))
-      .catch(() => setIsProtected(false));
+      .then(data => {
+        setIsProtected(data.isProtected);
+        setIsChecking(false);
+      })
+      .catch(() => {
+        setIsProtected(false);
+        setIsChecking(false);
+      });
+  };
+
+  useEffect(() => {
+    checkAuthStatus();
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -598,7 +609,17 @@ export default function App() {
               </div>
               <div className="p-6">
                 <div className="mb-6 p-3 bg-slate-50 rounded-xl border border-slate-100">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase mb-2 tracking-widest">Statut Sécurité</p>
+                  <div className="flex justify-between items-start mb-2">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Statut Sécurité</p>
+                    <button 
+                      onClick={checkAuthStatus}
+                      className="text-[10px] text-pink-500 font-bold hover:underline flex items-center gap-1"
+                      disabled={isChecking}
+                    >
+                      {isChecking ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
+                      Actualiser
+                    </button>
+                  </div>
                   <div className="flex items-center gap-2">
                     <div className={`w-2 h-2 rounded-full ${isProtected ? 'bg-green-500 animate-pulse' : 'bg-slate-300'}`}></div>
                     <p className="text-xs font-medium">
