@@ -76,6 +76,8 @@ interface AnalysisResult {
 
 export default function App() {
   const [step, setStep] = useState<'welcome' | 'export_reminder' | 'dashboard' | 'writing' | 'article'>('welcome');
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!sessionStorage.getItem('app_authenticated'));
+  const [passwordInput, setPasswordInput] = useState('');
   const [apiKey, setApiKey] = useState<string>(localStorage.getItem('gemini_api_key') || '');
   const [showConfig, setShowConfig] = useState(false);
   const [files, setFiles] = useState<{ analytics?: File, adsense?: File, pinMetrics?: File }>({});
@@ -150,7 +152,10 @@ export default function App() {
       const response = await genAI.models.generateContent({
         model,
         contents: prompt,
-        config: { responseMimeType: "application/json" }
+        config: { 
+          responseMimeType: "application/json",
+          tools: [{ urlContext: {} }]
+        }
       });
 
       const result = JSON.parse(response.text || '{}');
@@ -222,6 +227,55 @@ export default function App() {
     navigator.clipboard.writeText(text);
     alert("Copié dans le presse-papier !");
   };
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    const correctPassword = import.meta.env.VITE_APP_PASSWORD;
+    if (passwordInput === correctPassword) {
+      setIsAuthenticated(true);
+      sessionStorage.setItem('app_authenticated', 'true');
+    } else {
+      alert("Mot de passe incorrect.");
+    }
+  };
+
+  if (!isAuthenticated && import.meta.env.VITE_APP_PASSWORD) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.9 }} 
+          animate={{ opacity: 1, scale: 1 }} 
+          className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-md text-center"
+        >
+          <div className="w-16 h-16 bg-pink-500 rounded-2xl flex items-center justify-center text-white font-bold text-2xl mx-auto mb-6 shadow-lg">T</div>
+          <h2 className="text-2xl font-bold mb-2">Accès restreint</h2>
+          <p className="text-slate-500 mb-8 text-sm">Cette application est protégée. Entre le mot de passe pour continuer.</p>
+          
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="relative">
+              <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input 
+                type="password" 
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                placeholder="Mot de passe" 
+                className="w-full pl-12 pr-4 py-4 rounded-xl border border-slate-200 focus:border-pink-500 focus:ring-2 focus:ring-pink-200 outline-none transition-all font-medium"
+                autoFocus
+              />
+            </div>
+            <button 
+              type="submit"
+              className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold hover:bg-slate-800 transition-all shadow-lg active:scale-[0.98]"
+            >
+              Déverrouiller
+            </button>
+          </form>
+          
+          <p className="mt-8 text-[10px] text-slate-400 uppercase tracking-widest font-bold">tutoriel-iphone.fr © 2026</p>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
@@ -393,11 +447,11 @@ export default function App() {
 
               {/* Priorities */}
               <section>
-                <h2 className="text-2xl font-bold mb-6 tracking-tight flex items-center gap-2">🎯 {analysis ? 'Priorités du jour' : 'Suggestions types (Piliers)'}</h2>
+                <h2 className="text-2xl font-bold mb-6 tracking-tight flex items-center gap-2">🎯 {analysis ? 'Priorités du jour' : 'Exemples de thèmes (Piliers)'}</h2>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {(analysis?.priorities || [
-                    { pillar: '1', title: "30 idées d'écran d'accueil iPhone aesthetic printemps", angle: "Couleurs pastel et widgets floraux.", why: "Tendance saisonnière forte.", amazon: "", pinSearch: "Spring iPhone Home Screen Aesthetic" },
-                    { pillar: '2', title: "Les plus belles coques iPhone 16 tendance", angle: "Sélection premium MagSafe.", why: "Niche Amazon Associates prioritaire.", amazon: "Coques aesthetic", pinSearch: "iPhone 16 Case Aesthetic Trend" }
+                    { pillar: '1', title: "[Sujet Pilier 1 : Aesthetic Home Screen]", angle: "Exemple : 30 idées d'écran d'accueil pour la saison actuelle.", why: "Analyse tes stats pour voir les tendances réelles.", amazon: "", pinSearch: "iPhone Home Screen Aesthetic" },
+                    { pillar: '2', title: "[Sujet Pilier 2 : Coques & Accessoires]", angle: "Exemple : Les plus belles coques tendance du moment.", why: "Analyse tes stats pour voir les modèles les plus rentables.", amazon: "Coques aesthetic", pinSearch: "iPhone Case Aesthetic Trend" }
                   ]).map((p, i) => (
                     <div key={i} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-200 flex flex-col">
                       <div className="p-6 flex-1">
