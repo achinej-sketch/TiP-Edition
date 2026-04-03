@@ -572,6 +572,18 @@ export default function App() {
                 <button onClick={() => setShowConfig(false)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
               </div>
               <div className="p-6">
+                <div className="mb-6 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase mb-2 tracking-widest">Statut Sécurité</p>
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${import.meta.env.VITE_APP_PASSWORD ? 'bg-green-500 animate-pulse' : 'bg-slate-300'}`}></div>
+                    <p className="text-xs font-medium">
+                      {import.meta.env.VITE_APP_PASSWORD 
+                        ? 'Protection par mot de passe ACTIVE' 
+                        : 'Protection INACTIVE (Configure VITE_APP_PASSWORD)'}
+                    </p>
+                  </div>
+                </div>
+
                 <p className="text-sm text-slate-600 mb-4">Entre ta clé API Gemini pour activer l'analyse.</p>
                 <div className="space-y-4">
                   <div>
