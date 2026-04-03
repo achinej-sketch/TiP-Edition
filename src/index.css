@@ -1,79 +1,73 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Space Grotesk", sans-serif;
-  --color-brand: #10b981;
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
 }
 
 @layer base {
   body {
-    @apply bg-slate-950 text-slate-200 antialiased;
+    @apply bg-[#F8FAFC] text-slate-900 antialiased;
   }
 }
 
-.glass-card {
-  @apply bg-slate-900/50 backdrop-blur-xl border border-slate-800/50 shadow-2xl;
+.modern-card {
+  @apply bg-white border border-slate-200/60 shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-[24px] transition-all duration-300;
 }
 
-.pro-input {
-  @apply w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all;
+.modern-card:hover {
+  @apply shadow-[0_20px_40px_rgb(0,0,0,0.06)] border-indigo-100;
 }
 
-.pro-button {
-  @apply px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+.gradient-text {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 via-violet-600 to-pink-600;
 }
 
-.pro-button-primary {
-  @apply bg-emerald-500 text-slate-950 hover:bg-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.2)];
+.btn-primary {
+  @apply bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 hover:shadow-lg hover:shadow-indigo-200 transition-all active:scale-95 disabled:opacity-50;
 }
 
-.pro-button-secondary {
-  @apply bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700;
+.btn-secondary {
+  @apply bg-white text-slate-700 border border-slate-200 px-6 py-3 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-50 transition-all active:scale-95;
+}
+
+.input-field {
+  @apply w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-slate-900 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all;
 }
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-slate-950;
+  @apply bg-slate-100;
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-slate-800 rounded-full hover:bg-slate-700;
+  @apply bg-slate-300 rounded-full hover:bg-slate-400;
 }
 
 .markdown-body h2 {
-  @apply text-2xl font-bold mt-8 mb-4 text-slate-100 font-display;
+  @apply text-3xl font-extrabold mt-10 mb-6 text-slate-900 tracking-tight;
 }
 
 .markdown-body h3 {
-  @apply text-xl font-bold mt-6 mb-3 text-slate-200 font-display;
+  @apply text-xl font-bold mt-8 mb-4 text-slate-800;
 }
 
 .markdown-body p {
-  @apply mb-4 leading-relaxed text-slate-400;
+  @apply mb-5 leading-relaxed text-slate-600 text-lg;
 }
 
 .markdown-body ul, .markdown-body ol {
-  @apply mb-4 ml-6 list-disc text-slate-400;
-}
-
-.markdown-body li {
-  @apply mb-2;
+  @apply mb-6 ml-6 list-disc text-slate-600 space-y-2;
 }
 
 .markdown-body strong {
-  @apply font-bold text-slate-100;
-}
-
-.markdown-body em {
-  @apply italic text-slate-300;
+  @apply font-bold text-slate-900;
 }
 
 .markdown-body hr {
-  @apply my-8 border-slate-800;
+  @apply my-10 border-slate-100;
 }

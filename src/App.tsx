@@ -33,47 +33,64 @@ import {
   Maximize2,
   Minimize2,
   Download,
-  Trash2
+  Trash2,
+  DollarSign,
+  MousePointer2,
+  PieChart,
+  Activity,
+  Menu,
+  User,
+  LogOut
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Papa from 'papaparse';
 import { GoogleGenAI } from "@google/genai";
 
 // --- Constants & Prompts ---
-const ANALYSIS_PROMPT = `Tu es un expert SEO et analyste de données. Analyse ce fichier CSV de statistiques Search Console.
-Identifie les 5 opportunités prioritaires pour un site de tutoriels iPhone.
+const ANALYSIS_PROMPT = `Tu es un expert SEO et analyste de revenus publicitaires (AdSense). Analyse ces données CSV.
+Identifie les 5 opportunités prioritaires pour maximiser les revenus et le trafic.
+Considère :
+1. Les pages avec beaucoup d'impressions mais peu de clics (SEO).
+2. Les pages avec beaucoup de trafic mais peu de revenus (Optimisation AdSense).
+3. Les mots-clés émergents.
+
 Pour chaque opportunité, fournis :
-1. Un titre accrocheur.
-2. La raison (basée sur les clics, impressions, CTR ou position).
+1. Un titre d'article stratégique.
+2. La raison (basée sur les chiffres fournis).
 3. Une stratégie de contenu (ce qu'il faut écrire).
-4. Le mot-clé principal à cibler.
+4. Le mot-clé principal.
+5. Le type de donnée analysée (SEO ou AdSense).
 
 Réponds UNIQUEMENT au format JSON :
 [
-  { "title": "...", "reason": "...", "strategy": "...", "keyword": "...", "priority": "High/Medium" }
+  { "title": "...", "reason": "...", "strategy": "...", "keyword": "...", "priority": "High/Medium", "type": "SEO/AdSense" }
 ]`;
 
 const WRITING_PROMPT = (title: string, keyword: string) => `Tu es un rédacteur SEO expert pour tutoriel-iphone.fr.
-Rédige un article ultra-complet et optimisé pour le mot-clé : "${keyword}".
-Le titre de l'article est : "${title}".
+Rédige un article ultra-complet, structuré et optimisé pour le mot-clé : "${keyword}".
+Le titre est : "${title}".
 
 Instructions strictes :
-1. Utilise un ton professionnel, expert mais accessible.
-2. Structure : Introduction captivante, Sommaire, H2, H3, Conclusion.
-3. Optimisation RankMath : Inclure le mot-clé dans le premier paragraphe, les titres, et naturellement dans le texte.
-4. Format : HTML pur (sans balises <html> ou <body>), prêt à être collé dans WordPress.
-5. Ajoute des conseils d'expert exclusifs.
+1. Ton : Expert, professionnel, pédagogique.
+2. Structure : Introduction, Sommaire, H2, H3, Conclusion.
+3. Optimisation RankMath : Mot-clé dans le premier paragraphe, les titres, et naturellement dans le texte.
+4. Format : HTML pur (prêt pour WordPress).
+5. Ajoute des astuces exclusives.
 6. Longueur : Minimum 1200 mots.
 
 Réponds UNIQUEMENT avec le code HTML.`;
 
 // --- Types ---
-interface ArticleStat {
-  query: string;
-  clicks: number;
-  impressions: number;
-  ctr: string;
-  position: number;
+interface DataRow {
+  query?: string;
+  page?: string;
+  clicks?: number;
+  impressions?: number;
+  ctr?: string;
+  position?: number;
+  revenue?: number;
+  adRequests?: number;
+  rpm?: number;
 }
 
 interface Opportunity {
@@ -82,6 +99,7 @@ interface Opportunity {
   strategy: string;
   keyword: string;
   priority: 'High' | 'Medium';
+  type: 'SEO' | 'AdSense';
 }
 
 export default function App() {
@@ -97,13 +115,14 @@ export default function App() {
   const [apiKey, setApiKey] = useState<string>(localStorage.getItem('gemini_api_key') || '');
   const [showConfig, setShowConfig] = useState(false);
   
-  const [csvData, setCsvData] = useState<ArticleStat[]>([]);
+  const [csvData, setCsvData] = useState<DataRow[]>([]);
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
   const [generatedArticle, setGeneratedArticle] = useState<string>('');
   const [isWriting, setIsWriting] = useState(false);
-  const [step, setStep] = useState<'auth' | 'dashboard' | 'analysis' | 'writing' | 'article'>('dashboard');
+  const [step, setStep] = useState<'dashboard' | 'analysis' | 'writing' | 'article'>('dashboard');
+  const [dataType, setDataType] = useState<'SEO' | 'AdSense' | 'Mixed'>('Mixed');
 
   // --- Auth Logic ---
   const checkAuthStatus = async () => {
@@ -156,7 +175,7 @@ export default function App() {
     setShowConfig(false);
   };
 
-  const analyzeData = async (data: ArticleStat[]) => {
+  const analyzeData = async (data: DataRow[]) => {
     if (!apiKey) {
       setShowConfig(true);
       return;
@@ -222,16 +241,34 @@ export default function App() {
     Papa.parse(file, {
       header: true,
       dynamicTyping: true,
+      skipEmptyLines: true,
       complete: (results) => {
-        const mappedData = results.data.map((row: any) => ({
-          query: row.Query || row.Requête || row.keyword,
-          clicks: row.Clicks || row.Clics || 0,
-          impressions: row.Impressions || 0,
-          ctr: row.CTR || '0%',
-          position: row.Position || 0
-        })).filter(item => item.query);
-        setCsvData(mappedData as ArticleStat[]);
-        analyzeData(mappedData as ArticleStat[]);
+        const mappedData = results.data.map((row: any) => {
+          // Détection AdSense
+          const isAdSense = row['Page'] || row['Estimated earnings'] || row['Revenue'];
+          if (isAdSense) {
+            setDataType('AdSense');
+            return {
+              page: row['Page'] || row['URL'],
+              revenue: row['Estimated earnings'] || row['Revenue'] || row['Revenus'],
+              adRequests: row['Ad requests'] || row['Requêtes d\'annonce'],
+              rpm: row['Ad request RPM'] || row['RPM des requêtes d\'annonce'],
+              clicks: row['Clicks'] || row['Clics']
+            };
+          }
+          // Détection Search Console
+          setDataType('SEO');
+          return {
+            query: row['Query'] || row['Requête'] || row['keyword'],
+            clicks: row['Clicks'] || row['Clics'] || 0,
+            impressions: row['Impressions'] || 0,
+            ctr: row['CTR'] || '0%',
+            position: row['Position'] || 0
+          };
+        }).filter(item => (item as any).query || (item as any).page);
+        
+        setCsvData(mappedData as DataRow[]);
+        analyzeData(mappedData as DataRow[]);
       }
     });
   };
@@ -239,53 +276,53 @@ export default function App() {
   // --- Render Helpers ---
   if (isProtected && !isAuthenticated) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6 bg-slate-950">
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-emerald-500/10 blur-[120px] rounded-full" />
-          <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-500/10 blur-[120px] rounded-full" />
-        </div>
+      <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-indigo-100/40 via-transparent to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,_var(--tw-gradient-stops))] from-violet-100/40 via-transparent to-transparent pointer-events-none" />
 
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="glass-card w-full max-w-md p-8 rounded-3xl relative z-10"
+          className="modern-card w-full max-w-md p-10 relative z-10"
         >
           <div className="flex justify-center mb-8">
-            <div className="w-16 h-16 bg-emerald-500/20 rounded-2xl flex items-center justify-center border border-emerald-500/30">
-              <Shield className="text-emerald-500" size={32} />
+            <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-2xl flex items-center justify-center shadow-xl shadow-indigo-200">
+              <Lock className="text-white" size={32} />
             </div>
           </div>
 
-          <h1 className="text-3xl font-display font-bold text-center mb-2">Editorial Pro</h1>
-          <p className="text-slate-400 text-center mb-8">Accès restreint aux experts éditoriaux</p>
+          <h1 className="text-3xl font-extrabold text-center mb-2 tracking-tight">Editorial SaaS</h1>
+          <p className="text-slate-500 text-center mb-10">Connectez-vous pour accéder à votre espace expert.</p>
 
           <form onSubmit={handleLogin} className="space-y-6">
-            <div className="relative">
-              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-              <input 
-                type={showPassword ? "text" : "password"}
-                value={passwordInput}
-                onChange={(e) => setPasswordInput(e.target.value)}
-                placeholder="Mot de passe système"
-                className="pro-input pl-12 pr-12"
-                required
-              />
-              <button 
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
-              >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">Mot de passe système</label>
+              <div className="relative">
+                <input 
+                  type={showPassword ? "text" : "password"}
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  placeholder="••••••••"
+                  className="input-field"
+                  required
+                />
+                <button 
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 transition-colors"
+                >
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
             </div>
 
             {loginError && (
               <motion.div 
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
-                className="flex items-center gap-2 text-red-400 text-sm bg-red-400/10 p-3 rounded-xl border border-red-400/20"
+                className="flex items-center gap-2 text-red-500 text-sm bg-red-50 p-4 rounded-2xl border border-red-100"
               >
-                <AlertCircle size={16} />
+                <AlertCircle size={18} />
                 {loginError}
               </motion.div>
             )}
@@ -293,18 +330,15 @@ export default function App() {
             <button 
               type="submit" 
               disabled={isLoggingIn}
-              className="pro-button-primary w-full"
+              className="btn-primary w-full py-4 text-lg"
             >
-              {isLoggingIn ? <Loader2 className="animate-spin" /> : "Déverrouiller le terminal"}
+              {isLoggingIn ? <Loader2 className="animate-spin" /> : "Accéder au Dashboard"}
             </button>
           </form>
 
-          <div className="mt-8 pt-8 border-t border-slate-800 flex justify-between items-center text-[10px] text-slate-500 font-mono uppercase tracking-widest">
-            <span>v2.4.0-PRO</span>
-            <div className="flex items-center gap-1">
-              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-              SYSTEM ONLINE
-            </div>
+          <div className="mt-10 pt-8 border-t border-slate-100 flex justify-center items-center gap-2 text-xs text-slate-400 font-medium">
+            <Shield size={14} className="text-indigo-500" />
+            Connexion sécurisée SSL 256-bit
           </div>
         </motion.div>
       </div>
@@ -312,48 +346,44 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col font-sans">
+    <div className="min-h-screen flex flex-col font-sans bg-[#F8FAFC]">
       {/* Header */}
-      <header className="glass-card sticky top-0 z-50 border-x-0 border-t-0 px-6 py-4">
-        <div className="max-w-[1600px] mx-auto flex items-center justify-between">
+      <header className="bg-white/80 backdrop-blur-md sticky top-0 z-50 border-b border-slate-200/60 px-8 py-4">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center">
-              <Cpu className="text-slate-950" size={24} />
+            <div className="w-10 h-10 bg-gradient-to-br from-indigo-600 to-violet-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-100">
+              <Zap className="text-white" size={22} />
             </div>
             <div>
-              <h1 className="text-xl font-display font-bold tracking-tight">Editorial Pro</h1>
-              <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono uppercase">
-                <span className="text-emerald-500">Expert Mode</span>
-                <span className="opacity-30">|</span>
-                <span>Search Console Integrated</span>
+              <h1 className="text-xl font-extrabold tracking-tight gradient-text">Editorial SaaS</h1>
+              <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                <span>Expert Edition</span>
+                <span className="w-1 h-1 bg-slate-200 rounded-full" />
+                <span>v3.0.0</span>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
+            <div className="hidden md:flex items-center gap-6 mr-6">
+              <button className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">Dashboard</button>
+              <button className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">Analyses</button>
+              <button className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">Articles</button>
+            </div>
             <button 
               onClick={() => setShowConfig(true)}
-              className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-emerald-500 hover:border-emerald-500/50 transition-all"
+              className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-500 hover:text-indigo-600 hover:border-indigo-200 transition-all"
             >
               <Settings size={20} />
             </button>
-            <div className="h-8 w-px bg-slate-800 mx-2" />
-            <div className="flex items-center gap-3 pl-2">
-              <div className="text-right hidden sm:block">
-                <p className="text-xs font-bold text-slate-200">Admin Expert</p>
-                <p className="text-[10px] text-slate-500">mt.duweb@gmail.com</p>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-blue-500 p-0.5">
-                <div className="w-full h-full rounded-full bg-slate-950 flex items-center justify-center text-xs font-bold">
-                  AD
-                </div>
-              </div>
+            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-indigo-600 font-bold border border-slate-200">
+              AD
             </div>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 p-6 max-w-[1600px] mx-auto w-full">
+      <main className="flex-1 p-8 max-w-7xl mx-auto w-full">
         <AnimatePresence mode="wait">
           {step === 'dashboard' && (
             <motion.div 
@@ -361,106 +391,133 @@ export default function App() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="space-y-8"
+              className="space-y-10"
             >
-              {/* Hero / Upload Section */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div className="lg:col-span-2 glass-card p-8 rounded-3xl flex flex-col justify-between relative overflow-hidden">
-                  <div className="absolute top-0 right-0 p-8 opacity-10">
-                    <Database size={120} />
-                  </div>
+              {/* Hero Section */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                <div className="lg:col-span-8 modern-card p-10 flex flex-col justify-between relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-50 rounded-full blur-3xl -mr-32 -mt-32 opacity-50 group-hover:bg-indigo-100 transition-colors" />
+                  
                   <div className="relative z-10">
-                    <h2 className="text-4xl font-display font-bold mb-4 leading-tight">
-                      Analysez vos données <br />
-                      <span className="text-emerald-500">Search Console</span>
+                    <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-50 text-indigo-600 text-xs font-bold rounded-full mb-6">
+                      <Sparkles size={14} />
+                      IA Générative & Analyse de Données
+                    </div>
+                    <h2 className="text-5xl font-extrabold mb-6 tracking-tight leading-[1.1]">
+                      Boostez vos revenus <br />
+                      <span className="gradient-text">AdSense & SEO</span>
                     </h2>
-                    <p className="text-lg text-slate-400 max-w-xl mb-8">
-                      Importez vos statistiques d'exportation pour identifier les opportunités de croissance SEO et générer du contenu expert.
+                    <p className="text-lg text-slate-500 max-w-xl mb-10 leading-relaxed">
+                      Importez vos exports **Search Console** ou **AdSense** pour identifier les pages à fort potentiel et générer des articles experts en un clic.
                     </p>
                   </div>
                   
                   <div className="flex flex-wrap gap-4 relative z-10">
-                    <label className="pro-button-primary cursor-pointer">
+                    <label className="btn-primary cursor-pointer shadow-indigo-100">
                       <Upload size={20} />
                       Importer un CSV
                       <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
                     </label>
-                    <button className="pro-button-secondary">
-                      <Globe size={20} />
-                      Analyse en direct
+                    <button className="btn-secondary">
+                      <ExternalLink size={20} />
+                      Voir la documentation
                     </button>
                   </div>
                 </div>
 
-                <div className="glass-card p-8 rounded-3xl flex flex-col gap-6">
-                  <h3 className="text-lg font-display font-bold flex items-center gap-2">
-                    <Zap className="text-emerald-500" size={20} />
-                    Stats Système
-                  </h3>
-                  <div className="space-y-4">
-                    <div className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800">
-                      <p className="text-[10px] font-mono text-slate-500 uppercase mb-1">Moteur IA</p>
-                      <p className="text-sm font-bold text-emerald-500">Gemini 3.1 Pro</p>
-                    </div>
-                    <div className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800">
-                      <p className="text-[10px] font-mono text-slate-500 uppercase mb-1">Analyse SEO</p>
-                      <p className="text-sm font-bold text-blue-400">Grounding Google Search</p>
-                    </div>
-                    <div className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800">
-                      <p className="text-[10px] font-mono text-slate-500 uppercase mb-1">Statut Clé API</p>
-                      <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${apiKey ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                        <p className="text-sm font-bold">{apiKey ? 'Connectée' : 'Manquante'}</p>
+                <div className="lg:col-span-4 flex flex-col gap-6">
+                  <div className="modern-card p-8 flex-1">
+                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                      <Activity size={16} className="text-indigo-500" />
+                      Statut Système
+                    </h3>
+                    <div className="space-y-6">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-slate-600">Moteur IA</span>
+                        <span className="text-sm font-bold text-slate-900">Gemini 3.1 Pro</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-slate-600">Mode Analyse</span>
+                        <span className="px-2 py-1 bg-violet-50 text-violet-600 text-[10px] font-bold rounded-lg uppercase">{dataType}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-slate-600">Clé API</span>
+                        <div className="flex items-center gap-2">
+                          <div className={`w-2 h-2 rounded-full ${apiKey ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                          <span className="text-sm font-bold">{apiKey ? 'Active' : 'Manquante'}</span>
+                        </div>
                       </div>
                     </div>
+                  </div>
+                  
+                  <div className="modern-card p-8 bg-gradient-to-br from-indigo-600 to-violet-700 text-white border-none shadow-indigo-200">
+                    <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mb-6">
+                      <DollarSign size={24} />
+                    </div>
+                    <h3 className="text-xl font-bold mb-2">Optimisation AdSense</h3>
+                    <p className="text-indigo-100 text-sm leading-relaxed">
+                      L'IA détecte les pages avec un fort RPM mais peu de trafic pour maximiser vos gains.
+                    </p>
                   </div>
                 </div>
               </div>
 
               {/* Opportunities Grid */}
               {opportunities.length > 0 && (
-                <div className="space-y-6">
+                <div className="space-y-8">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-2xl font-display font-bold">Opportunités Prioritaires</h3>
-                    <span className="px-3 py-1 bg-emerald-500/10 text-emerald-500 text-xs font-bold rounded-full border border-emerald-500/20">
-                      {opportunities.length} Détectées
-                    </span>
+                    <div>
+                      <h3 className="text-3xl font-extrabold tracking-tight">Opportunités détectées</h3>
+                      <p className="text-slate-500 mt-1">Basé sur votre dernier import {dataType}.</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <div className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600">
+                        {opportunities.length} Résultats
+                      </div>
+                    </div>
                   </div>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                     {opportunities.map((opp, idx) => (
                       <motion.div 
                         key={idx}
                         initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ delay: idx * 0.1 }}
-                        className="glass-card p-6 rounded-3xl hover:border-emerald-500/50 transition-all group"
+                        className="modern-card p-8 hover:translate-y-[-4px] group"
                       >
-                        <div className="flex justify-between items-start mb-4">
-                          <div className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider ${
-                            opp.priority === 'High' ? 'bg-red-500/10 text-red-500' : 'bg-blue-500/10 text-blue-500'
+                        <div className="flex justify-between items-start mb-6">
+                          <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                            opp.type === 'AdSense' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-indigo-50 text-indigo-600 border border-indigo-100'
                           }`}>
-                            {opp.priority} Priority
+                            {opp.type} Opportunity
                           </div>
-                          <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-slate-500 group-hover:text-emerald-500 transition-colors">
-                            <TrendingUp size={18} />
+                          <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 group-hover:text-indigo-600 group-hover:bg-indigo-50 transition-all">
+                            {opp.type === 'AdSense' ? <DollarSign size={20} /> : <TrendingUp size={20} />}
                           </div>
                         </div>
                         
-                        <h4 className="text-lg font-bold mb-2 group-hover:text-emerald-400 transition-colors">{opp.title}</h4>
-                        <p className="text-xs text-slate-500 mb-4 line-clamp-2">{opp.reason}</p>
+                        <h4 className="text-xl font-bold mb-3 group-hover:text-indigo-600 transition-colors leading-snug">{opp.title}</h4>
+                        <p className="text-sm text-slate-500 mb-6 line-clamp-3 leading-relaxed">{opp.reason}</p>
                         
-                        <div className="p-3 bg-slate-950/50 rounded-xl border border-slate-800 mb-6">
-                          <p className="text-[10px] font-mono text-slate-500 uppercase mb-1">Mot-clé cible</p>
-                          <p className="text-sm font-bold text-slate-300">{opp.keyword}</p>
+                        <div className="space-y-4 mb-8">
+                          <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                            <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center text-indigo-500 shadow-sm">
+                              <MousePointer2 size={16} />
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase">Mot-clé cible</p>
+                              <p className="text-sm font-bold text-slate-700">{opp.keyword}</p>
+                            </div>
+                          </div>
                         </div>
 
                         <button 
                           onClick={() => writeArticle(opp)}
-                          className="w-full pro-button-primary py-2.5 text-sm"
+                          className="w-full btn-primary py-3.5"
                         >
-                          Rédiger l'article expert
-                          <ArrowRight size={16} />
+                          Rédiger l'article
+                          <ArrowRight size={18} />
                         </button>
                       </motion.div>
                     ))}
@@ -476,16 +533,18 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="flex flex-col items-center justify-center py-20"
+              className="flex flex-col items-center justify-center py-32"
             >
-              <div className="relative mb-8">
-                <div className="w-24 h-24 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin" />
+              <div className="relative mb-10">
+                <div className="w-32 h-32 rounded-full border-4 border-indigo-100 border-t-indigo-600 animate-spin shadow-xl shadow-indigo-100" />
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <Terminal className="text-emerald-500" size={32} />
+                  <PieChart className="text-indigo-600" size={40} />
                 </div>
               </div>
-              <h2 className="text-3xl font-display font-bold mb-4">Analyse Neuronale en cours</h2>
-              <p className="text-slate-500 font-mono animate-pulse">Extraction des patterns SEO... [0x44F2]</p>
+              <h2 className="text-4xl font-extrabold mb-4 tracking-tight">Analyse des données...</h2>
+              <p className="text-slate-500 text-lg max-w-md text-center">
+                Notre IA examine vos statistiques pour dénicher les meilleures opportunités de revenus.
+              </p>
             </motion.div>
           )}
 
@@ -495,18 +554,18 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="flex flex-col items-center justify-center py-20"
+              className="flex flex-col items-center justify-center py-32"
             >
-              <div className="relative mb-8">
-                <div className="w-24 h-24 rounded-full border-4 border-blue-500/20 border-t-blue-500 animate-spin" />
+              <div className="relative mb-10">
+                <div className="w-32 h-32 rounded-full border-4 border-violet-100 border-t-violet-600 animate-spin shadow-xl shadow-violet-100" />
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <Sparkles className="text-blue-500" size={32} />
+                  <Sparkles className="text-violet-600" size={40} />
                 </div>
               </div>
-              <h2 className="text-3xl font-display font-bold mb-4">Rédaction Expert</h2>
-              <p className="text-slate-500 text-center max-w-md">
-                Génération d'un contenu de 1200+ mots optimisé RankMath pour <br />
-                <span className="text-blue-400 font-bold">"{selectedOpportunity?.keyword}"</span>
+              <h2 className="text-4xl font-extrabold mb-4 tracking-tight">Rédaction en cours</h2>
+              <p className="text-slate-500 text-lg text-center max-w-lg leading-relaxed">
+                Génération d'un article expert optimisé SEO pour <br />
+                <span className="font-bold text-violet-600">"{selectedOpportunity?.keyword}"</span>
               </p>
             </motion.div>
           )}
@@ -517,17 +576,17 @@ export default function App() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="max-w-5xl mx-auto space-y-6"
+              className="max-w-5xl mx-auto space-y-8"
             >
               <div className="flex items-center justify-between">
                 <button 
                   onClick={() => setStep('dashboard')}
-                  className="flex items-center gap-2 text-slate-500 hover:text-slate-200 font-medium transition-colors"
+                  className="flex items-center gap-2 text-slate-500 hover:text-indigo-600 font-bold transition-colors"
                 >
-                  <ChevronLeft size={20} />
+                  <ChevronLeft size={22} />
                   Retour au Dashboard
                 </button>
-                <div className="flex gap-3">
+                <div className="flex gap-4">
                   <button 
                     onClick={() => {
                       const blob = new Blob([generatedArticle], { type: 'text/html' });
@@ -537,61 +596,66 @@ export default function App() {
                       a.download = `article-${selectedOpportunity?.keyword}.html`;
                       a.click();
                     }}
-                    className="pro-button-secondary py-2 px-4 text-sm"
+                    className="btn-secondary"
                   >
-                    <Download size={18} />
-                    Exporter .html
+                    <Download size={20} />
+                    Exporter HTML
                   </button>
                   <button 
                     onClick={() => {
                       navigator.clipboard.writeText(generatedArticle);
                       alert("Code HTML copié !");
                     }}
-                    className="pro-button-primary py-2 px-4 text-sm"
+                    className="btn-primary"
                   >
-                    <Copy size={18} />
+                    <Copy size={20} />
                     Copier le code
                   </button>
                 </div>
               </div>
 
-              <div className="glass-card rounded-3xl overflow-hidden">
-                <div className="p-8 border-b border-slate-800 bg-slate-900/30">
-                  <div className="flex items-center gap-3 mb-4">
-                    <span className="px-2 py-1 bg-emerald-500/10 text-emerald-500 text-[10px] font-bold rounded border border-emerald-500/20 uppercase">SEO Optimized</span>
-                    <span className="px-2 py-1 bg-blue-500/10 text-blue-400 text-[10px] font-bold rounded border border-blue-500/20 uppercase">Expert Draft</span>
+              <div className="modern-card overflow-hidden">
+                <div className="p-10 border-b border-slate-100 bg-slate-50/50">
+                  <div className="flex items-center gap-3 mb-6">
+                    <span className="px-3 py-1 bg-indigo-50 text-indigo-600 text-xs font-bold rounded-full border border-indigo-100 uppercase">SEO Optimized</span>
+                    <span className="px-3 py-1 bg-violet-50 text-violet-600 text-xs font-bold rounded-full border border-violet-100 uppercase">Expert Draft</span>
                   </div>
-                  <h2 className="text-4xl font-display font-bold">{selectedOpportunity?.title}</h2>
+                  <h2 className="text-5xl font-extrabold tracking-tight leading-tight text-slate-900">{selectedOpportunity?.title}</h2>
                 </div>
                 
-                <div className="grid grid-cols-1 lg:grid-cols-3">
-                  <div className="lg:col-span-2 p-8 border-r border-slate-800">
-                    <div className="prose prose-invert max-w-none markdown-body" dangerouslySetInnerHTML={{ __html: generatedArticle }} />
+                <div className="grid grid-cols-1 lg:grid-cols-4">
+                  <div className="lg:col-span-3 p-10 lg:p-14 border-r border-slate-100">
+                    <div className="markdown-body" dangerouslySetInnerHTML={{ __html: generatedArticle }} />
                   </div>
-                  <div className="p-8 space-y-8 bg-slate-950/30">
+                  <div className="p-10 space-y-10 bg-slate-50/30">
                     <div>
-                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Checklist RankMath</h4>
-                      <div className="space-y-3">
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-6">Checklist RankMath</h4>
+                      <div className="space-y-4">
                         {[
                           "Mot-clé dans le titre H1",
-                          "Mot-clé dans le premier paragraphe",
-                          "Densité de mot-clé optimale",
-                          "Structure H2/H3 respectée",
-                          "Longueur de contenu (>1200 mots)",
-                          "Optimisation pour la recherche sémantique"
+                          "Mot-clé dans l'intro",
+                          "Densité optimale",
+                          "Structure H2/H3",
+                          "Longueur > 1200 mots",
+                          "Sémantique riche"
                         ].map((item, i) => (
-                          <div key={i} className="flex items-center gap-3 text-sm text-slate-400">
-                            <CheckCircle2 size={16} className="text-emerald-500" />
+                          <div key={i} className="flex items-center gap-3 text-sm font-medium text-slate-600">
+                            <div className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
+                              <CheckCircle2 size={12} />
+                            </div>
                             {item}
                           </div>
                         ))}
                       </div>
                     </div>
 
-                    <div className="p-6 bg-emerald-500/5 rounded-2xl border border-emerald-500/10">
-                      <h4 className="text-sm font-bold text-emerald-500 mb-2">Conseil Pro</h4>
-                      <p className="text-xs text-slate-400 leading-relaxed">
-                        N'oubliez pas d'ajouter des liens internes vers vos articles iPhone existants pour renforcer le maillage interne.
+                    <div className="p-6 bg-indigo-50 rounded-3xl border border-indigo-100 shadow-sm">
+                      <h4 className="text-sm font-bold text-indigo-600 mb-3 flex items-center gap-2">
+                        <Sparkles size={16} />
+                        Conseil Expert
+                      </h4>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Ajoutez des captures d'écran réelles pour augmenter le temps passé sur la page et booster votre SEO.
                       </p>
                     </div>
                   </div>
@@ -611,66 +675,66 @@ export default function App() {
               animate={{ opacity: 1 }} 
               exit={{ opacity: 0 }} 
               onClick={() => setShowConfig(false)} 
-              className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" 
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" 
             />
             <motion.div 
               initial={{ opacity: 0, scale: 0.95, y: 20 }} 
               animate={{ opacity: 1, scale: 1, y: 0 }} 
               exit={{ opacity: 0, scale: 0.95, y: 20 }} 
-              className="relative glass-card rounded-3xl w-full max-w-md overflow-hidden"
+              className="relative modern-card w-full max-w-md overflow-hidden p-0"
             >
-              <div className="p-6 border-b border-slate-800 flex items-center justify-between">
-                <h3 className="font-display font-bold text-lg flex items-center gap-2">
-                  <Settings className="text-emerald-500" size={20} /> 
-                  Configuration Système
+              <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <h3 className="font-extrabold text-xl flex items-center gap-3">
+                  <Settings className="text-indigo-600" size={24} /> 
+                  Paramètres
                 </h3>
-                <button onClick={() => setShowConfig(false)} className="text-slate-500 hover:text-slate-200 transition-colors">
-                  <X size={20} />
+                <button onClick={() => setShowConfig(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                  <X size={24} />
                 </button>
               </div>
               
-              <div className="p-6 space-y-6">
-                <div className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800">
-                  <div className="flex justify-between items-start mb-3">
-                    <p className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Sécurité</p>
+              <div className="p-8 space-y-8">
+                <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200/60">
+                  <div className="flex justify-between items-start mb-4">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sécurité</p>
                     <button 
                       onClick={checkAuthStatus}
-                      className="text-[10px] text-emerald-500 font-bold hover:underline flex items-center gap-1"
+                      className="text-[10px] text-indigo-600 font-bold hover:underline flex items-center gap-1"
                       disabled={isChecking}
                     >
-                      {isChecking ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
-                      Sync
+                      {isChecking ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                      Synchroniser
                     </button>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${isProtected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-700'}`}></div>
-                    <p className="text-xs font-medium">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-2.5 h-2.5 rounded-full ${isProtected ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.4)]' : 'bg-slate-300'}`}></div>
+                    <p className="text-sm font-bold text-slate-700">
                       {isProtected 
-                        ? 'Protection Mot de Passe ACTIVE' 
-                        : 'Protection INACTIVE (VITE_APP_PASSWORD)'}
+                        ? 'Protection par mot de passe ACTIVE' 
+                        : 'Protection INACTIVE'}
                     </p>
                   </div>
                 </div>
 
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-[10px] font-mono text-slate-500 uppercase mb-2">Clé API Gemini Pro</label>
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">Clé API Gemini Pro</label>
                     <div className="relative">
-                      <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600" size={16} />
+                      <Key className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                       <input 
                         type="password" 
                         value={apiKey} 
                         onChange={(e) => setApiKey(e.target.value)} 
                         placeholder="AIzaSy..." 
-                        className="pro-input pl-12 text-sm font-mono" 
+                        className="input-field pl-14 font-mono text-sm" 
                       />
                     </div>
                   </div>
                   <button 
                     onClick={() => saveApiKey(apiKey)} 
-                    className="pro-button-primary w-full"
+                    className="btn-primary w-full py-4"
                   >
-                    Mettre à jour les paramètres
+                    Enregistrer les modifications
                   </button>
                 </div>
               </div>
@@ -680,9 +744,9 @@ export default function App() {
       </AnimatePresence>
 
       {/* Footer */}
-      <footer className="p-6 border-t border-slate-900 text-center">
-        <p className="text-[10px] text-slate-600 font-mono uppercase tracking-[0.2em]">
-          © 2026 Editorial Pro • Advanced Neural Editorial Interface
+      <footer className="p-10 border-t border-slate-200/60 text-center bg-white">
+        <p className="text-xs text-slate-400 font-bold uppercase tracking-[0.3em]">
+          © 2026 Editorial SaaS • Neural Content Engine
         </p>
       </footer>
     </div>
