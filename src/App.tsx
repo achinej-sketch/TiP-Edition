@@ -77,7 +77,9 @@ interface AnalysisResult {
 export default function App() {
   const [step, setStep] = useState<'welcome' | 'export_reminder' | 'dashboard' | 'writing' | 'article'>('welcome');
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!sessionStorage.getItem('app_authenticated'));
+  const [isProtected, setIsProtected] = useState<boolean>(false);
   const [passwordInput, setPasswordInput] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [apiKey, setApiKey] = useState<string>(localStorage.getItem('gemini_api_key') || '');
   const [showConfig, setShowConfig] = useState(false);
   const [files, setFiles] = useState<{ analytics?: File, adsense?: File, pinMetrics?: File }>({});
@@ -228,18 +230,38 @@ export default function App() {
     alert("Copié dans le presse-papier !");
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  useEffect(() => {
+    // Vérifier si la protection est active sur le serveur
+    fetch('/api/auth-status')
+      .then(res => res.json())
+      .then(data => setIsProtected(data.isProtected))
+      .catch(() => setIsProtected(false));
+  }, []);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const correctPassword = import.meta.env.VITE_APP_PASSWORD;
-    if (passwordInput === correctPassword) {
-      setIsAuthenticated(true);
-      sessionStorage.setItem('app_authenticated', 'true');
-    } else {
-      alert("Mot de passe incorrect.");
+    setIsLoggingIn(true);
+    try {
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: passwordInput }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setIsAuthenticated(true);
+        sessionStorage.setItem('app_authenticated', 'true');
+      } else {
+        alert("Mot de passe incorrect.");
+      }
+    } catch (err) {
+      alert("Erreur de connexion au serveur.");
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
-  if (!isAuthenticated && import.meta.env.VITE_APP_PASSWORD) {
+  if (!isAuthenticated && isProtected) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
         <motion.div 
@@ -261,12 +283,15 @@ export default function App() {
                 placeholder="Mot de passe" 
                 className="w-full pl-12 pr-4 py-4 rounded-xl border border-slate-200 focus:border-pink-500 focus:ring-2 focus:ring-pink-200 outline-none transition-all font-medium"
                 autoFocus
+                disabled={isLoggingIn}
               />
             </div>
             <button 
               type="submit"
-              className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold hover:bg-slate-800 transition-all shadow-lg active:scale-[0.98]"
+              disabled={isLoggingIn}
+              className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold hover:bg-slate-800 transition-all shadow-lg active:scale-[0.98] flex items-center justify-center gap-2"
             >
+              {isLoggingIn ? <Loader2 className="animate-spin" size={18} /> : null}
               Déverrouiller
             </button>
           </form>
@@ -575,9 +600,9 @@ export default function App() {
                 <div className="mb-6 p-3 bg-slate-50 rounded-xl border border-slate-100">
                   <p className="text-[10px] font-bold text-slate-400 uppercase mb-2 tracking-widest">Statut Sécurité</p>
                   <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${import.meta.env.VITE_APP_PASSWORD ? 'bg-green-500 animate-pulse' : 'bg-slate-300'}`}></div>
+                    <div className={`w-2 h-2 rounded-full ${isProtected ? 'bg-green-500 animate-pulse' : 'bg-slate-300'}`}></div>
                     <p className="text-xs font-medium">
-                      {import.meta.env.VITE_APP_PASSWORD 
+                      {isProtected 
                         ? 'Protection par mot de passe ACTIVE' 
                         : 'Protection INACTIVE (Configure VITE_APP_PASSWORD)'}
                     </p>
